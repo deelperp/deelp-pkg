@@ -160,9 +160,16 @@ func Autenticacao(cfg Config) func(http.Handler) http.Handler {
 }
 
 // TenantGuard valida que o {empresaId} do path corresponde ao empresaId do
-// claim do JWT. Quando o path não tem {empresaId}, o middleware é no-op —
-// rotas como /tarefa-service/v1/tarefas/listar (legacy, body) ou rotas sem
-// vínculo direto com empresa devem fazer cross-check no próprio handler.
+// claim do JWT. Quando o path não contém empresaId, o middleware é no-op
+// — rotas que recebem empresaId no body devem fazer cross-check no próprio
+// handler.
+//
+// IMPORTANTE: r.PathValue só é populado APÓS o ServeMux dispatchar. Quando
+// este middleware envolve o ServeMux como um todo, r.PathValue retorna
+// vazio. Por isso, além de tentar r.PathValue, o middleware faz uma
+// varredura defensiva no path bruto procurando qualquer segmento UUID que
+// venha imediatamente após um segmento conhecido como prefixo de recurso
+// escopado por empresa. Se encontrar e divergir do claim, retorna 403.
 //
 // Deve ser registrado APÓS Autenticacao na cadeia.
 func TenantGuard(cfg Config) func(http.Handler) http.Handler {
@@ -170,6 +177,9 @@ func TenantGuard(cfg Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			pathEmp := r.PathValue("empresaId")
+			if pathEmp == "" {
+				pathEmp = extrairEmpresaIdDoPath(r.URL.Path)
+			}
 			if pathEmp == "" {
 				next.ServeHTTP(w, r)
 				return
@@ -190,4 +200,36 @@ func TenantGuard(cfg Config) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func extrairEmpresaIdDoPath(path string) string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	for i := 0; i+1 < len(parts); i++ {
+		switch parts[i] {
+		case "empresas", "empresa":
+			if pareceUUID(parts[i+1]) {
+				return parts[i+1]
+			}
+		}
+	}
+	return ""
+}
+
+func pareceUUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, c := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if c != '-' {
+				return false
+			}
+		default:
+			if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+				return false
+			}
+		}
+	}
+	return true
 }
