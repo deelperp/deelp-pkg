@@ -1,0 +1,38 @@
+// go.work — DEV LOCAL APENAS
+//
+// Cada serviço deelp é um repositório Git independente em github.com/deelperp/<service>,
+// e o pacote compartilhado vive em github.com/deelperp/deelp-pkg.
+//
+// Este go.work amarra `./pkg` (que será o repo deelp-pkg) com os 15 services
+// SOMENTE para desenvolvimento local: alterações em pkg/* refletem instantaneamente
+// nos services sem precisar tagear nova versão.
+//
+// Em CI/CD o pipeline DEVE rodar com GOWORK=off — assim cada serviço resolve
+// `github.com/deelperp/deelp-pkg v0.1.0` via GOPROXY, garantindo que a imagem
+// Docker é construída com a versão tagueada do pacote.
+//
+// IMPORTANTE: este arquivo NÃO deve ser commitado em nenhum dos repositórios
+// individuais. Adicione `go.work*` ao .gitignore de cada serviço se ainda não
+// estiver lá.
+
+go 1.23
+
+use (
+	./pkg
+
+	./autenticacao-service
+	./cliente-service
+	./email-service
+	./estoque-service
+	./fatura-service
+	./financeiro-service
+	./mdfe-service
+	./nfe-service
+	./notificacao-service
+	./ordem-service
+	./relatorio-service
+	./roadmap-service
+	./tarefa-service
+	./whatsapp-service
+	./wiki-service
+)

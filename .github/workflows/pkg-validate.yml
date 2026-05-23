@@ -1,0 +1,91 @@
+# Valida os pacotes compartilhados (pkg/*) em PRs que os modifiquem e cria
+# tags pre-release automaticas em push para main.
+#
+# Estrategia genérica: a matrix descobre todos os subdiretorios de pkg/
+# que tem go.mod, e roda go vet+test em cada um. Adicionar novo pkg nao
+# exige editar este workflow.
+
+name: pkg-validate
+
+on:
+  push:
+    branches: [main]
+    paths: ['pkg/**']
+  pull_request:
+    paths: ['pkg/**']
+
+env:
+  GOWORK: "off"
+
+jobs:
+  descobrir:
+    runs-on: ubuntu-latest
+    outputs:
+      pacotes: ${{ steps.lista.outputs.pacotes }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: lista
+        run: |
+          BASE_REF="${{ github.event.pull_request.base.sha || github.event.before }}"
+          if [ -z "$BASE_REF" ] || [ "$BASE_REF" = "0000000000000000000000000000000000000000" ]; then
+            BASE_REF=$(git rev-parse HEAD~1 || echo "HEAD")
+          fi
+          MODIFICADOS=$(git diff --name-only "$BASE_REF" HEAD | grep '^pkg/' | awk -F/ '{print $2}' | sort -u | jq -R . | jq -s -c .)
+          if [ "$MODIFICADOS" = "[]" ] || [ -z "$MODIFICADOS" ]; then
+            MODIFICADOS="[]"
+          fi
+          echo "pacotes=$MODIFICADOS" >> $GITHUB_OUTPUT
+          echo "Pacotes modificados: $MODIFICADOS"
+
+  test:
+    needs: descobrir
+    if: needs.descobrir.outputs.pacotes != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        pacote: ${{ fromJSON(needs.descobrir.outputs.pacotes) }}
+    outputs:
+      pacote-${{ matrix.pacote }}-passou: ${{ steps.testar.outputs.passou }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: '1.23' }
+      - id: testar
+        working-directory: pkg/${{ matrix.pacote }}
+        run: |
+          go vet ./...
+          # alguns pacotes podem nao ter testes ainda — go test passa sem rodar nada
+          go test -race -cover ./...
+          echo "passou=true" >> $GITHUB_OUTPUT
+
+  tag-prerelease:
+    needs: [descobrir, test]
+    if: |
+      always() &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main' &&
+      needs.test.result == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Empurrar tags pre-release
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          echo '${{ needs.descobrir.outputs.pacotes }}' | jq -r '.[]' | while read pkg; do
+            BASE=$(git tag --list "pkg/${pkg}/v*" | sed "s|pkg/${pkg}/||" | sort -V | tail -1)
+            if [ -z "$BASE" ]; then BASE="v0.0.0"; fi
+            BASE_NUM=$(echo "$BASE" | sed 's/^v//' | cut -d'-' -f1)
+            MAJOR=$(echo "$BASE_NUM" | cut -d'.' -f1)
+            MINOR=$(echo "$BASE_NUM" | cut -d'.' -f2)
+            PATCH=$(echo "$BASE_NUM" | cut -d'.' -f3)
+            NEXT_PATCH=$((PATCH + 1))
+            TAG="pkg/${pkg}/v${MAJOR}.${MINOR}.${NEXT_PATCH}-rc.${SHA}"
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "[$pkg] publicado: $TAG"
+          done
