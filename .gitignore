@@ -1,16 +1,20 @@
-autenticacao-service/
-cliente-service/
-email-service/
-estoque-service/
-fatura-service/
-financeiro-service/
-mdfe-service/
-nfe-service/
-notificacao-service/
-ordem-service/
-relatorio-service/
-roadmap-service/
-tarefa-service/
-whatsapp-service/
-wiki-service/
-backup-service/
+# Build artifacts e cache do Go
+*.exe
+*.test
+*.out
+*.prof
+.go-build/
+vendor/
+
+# Workspace files — NUNCA versionar no repo do modulo compartilhado.
+# Workspace e ferramenta de DEV LOCAL do dev que clonou todos os services + o pkg
+# na mesma pasta. Se entrar no repo, quebra builds em CI/CD (GOWORK=on por padrao).
+go.work
+go.work.sum
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+*.swp
+*.swo
