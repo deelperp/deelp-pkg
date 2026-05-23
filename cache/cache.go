@@ -12,6 +12,7 @@ package cache
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -92,4 +93,78 @@ func ouPadraoInt(v, padrao int) int {
 		return padrao
 	}
 	return v
+}
+
+// ErrCacheMiss é retornado por CacheService.Get quando a chave não existe.
+var ErrCacheMiss = fmt.Errorf("cache: chave não encontrada")
+
+// CacheService oferece operações Get/Set/Delete sobre um *redis.Client
+// obtido via Conectar. Centralizado no pkg para que todos os microserviços
+// usem a mesma implementação.
+type CacheService struct {
+	client *redis.Client
+	ttl    time.Duration
+}
+
+// NewCacheService cria um CacheService com TTL padrão para operações Set.
+func NewCacheService(client *redis.Client, ttl time.Duration) *CacheService {
+	return &CacheService{client: client, ttl: ttl}
+}
+
+// Get recupera e desserializa JSON. Retorna ErrCacheMiss se a chave não existe.
+func (c *CacheService) Get(ctx context.Context, key string, dest interface{}) error {
+	val, err := c.client.Get(ctx, key).Result()
+	if err == redis.Nil {
+		return ErrCacheMiss
+	}
+	if err != nil {
+		return fmt.Errorf("cache: get %q: %w", key, err)
+	}
+	return json.Unmarshal([]byte(val), dest)
+}
+
+// Set serializa e armazena com o TTL padrão configurado.
+func (c *CacheService) Set(ctx context.Context, key string, value interface{}) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("cache: marshal %q: %w", key, err)
+	}
+	return c.client.Set(ctx, key, data, c.ttl).Err()
+}
+
+// SetWithTTL serializa e armazena com TTL explícito.
+func (c *CacheService) SetWithTTL(ctx context.Context, key string, value interface{}, ttl time.Duration) error {
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fmt.Errorf("cache: marshal %q: %w", key, err)
+	}
+	return c.client.Set(ctx, key, data, ttl).Err()
+}
+
+// Delete remove uma chave.
+func (c *CacheService) Delete(ctx context.Context, key string) error {
+	return c.client.Del(ctx, key).Err()
+}
+
+// DeletePattern remove todas as chaves que correspondem ao padrão glob.
+// Atenção: KEYS bloqueia o Redis em bases grandes — use apenas em bases pequenas
+// ou durante janelas de manutenção. Para produção com volume alto, prefira SCAN.
+func (c *CacheService) DeletePattern(ctx context.Context, pattern string) error {
+	keys, err := c.client.Keys(ctx, pattern).Result()
+	if err != nil {
+		return fmt.Errorf("cache: keys %q: %w", pattern, err)
+	}
+	if len(keys) > 0 {
+		return c.client.Del(ctx, keys...).Err()
+	}
+	return nil
+}
+
+// Exists verifica se uma chave existe.
+func (c *CacheService) Exists(ctx context.Context, key string) (bool, error) {
+	count, err := c.client.Exists(ctx, key).Result()
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
