@@ -119,25 +119,20 @@ func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 		ambiente = "unknown"
 	}
 
-	// resource.New combina atributos default + customizados respeitando o
-	// schema URL especificado. Evita o conflito que resource.Merge gera
-	// quando alguma dependência transitiva usa semconv de versão diferente
-	// (vide go.sum — otel/semconv v1.25 vs v1.27).
-	res, err := resource.New(ctx,
-		resource.WithSchemaURL(semconv.SchemaURL),
-		resource.WithAttributes(
-			semconv.ServiceNameKey.String(cfg.NomeServico),
-			semconv.ServiceVersionKey.String(versao),
-			semconv.DeploymentEnvironmentNameKey.String(ambiente),
-		),
-		resource.WithFromEnv(),
-		resource.WithProcess(),
-		resource.WithHost(),
-		resource.WithTelemetrySDK(),
+	// resource.New com detectors (WithProcess/WithHost/WithTelemetrySDK)
+	// dispara "conflicting Schema URL" quando dependências transitivas trazem
+	// semconv de versões diferentes (1.25 vs 1.27 vs 1.34 etc) — comum quando
+	// otel direto e otel/sdk indireto estão em versões diferentes no go.mod.
+	//
+	// Solução: criar o resource só com os atributos que controlamos diretamente,
+	// usando o semconv pinado em /v1.27.0. Atributos auxiliares (host.name,
+	// process.pid, etc) são úteis mas não essenciais — perdê-los é aceitável
+	// e evita 100% o erro de schema URL conflict.
+	res := resource.NewWithAttributes(semconv.SchemaURL,
+		semconv.ServiceNameKey.String(cfg.NomeServico),
+		semconv.ServiceVersionKey.String(versao),
+		semconv.DeploymentEnvironmentNameKey.String(ambiente),
 	)
-	if err != nil {
-		return nil, fmt.Errorf("observabilidade: criar resource falhou: %w", err)
-	}
 
 	proto := cfg.protocoloEfetivo()
 	cfg.log("observabilidade.Iniciar", "servico", cfg.NomeServico, "protocolo", string(proto), "endpoint", cfg.Endpoint)
