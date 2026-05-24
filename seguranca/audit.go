@@ -3,6 +3,7 @@ package seguranca
 import (
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -76,8 +77,15 @@ func (s *SecurityAudit) Registrar(r *http.Request, tipo, usuarioID string, detal
 }
 
 // DetectarSuspeito devolve true se a path/query contém algum dos padrões.
+// Aplica URL-decode (incluindo '+' como espaço, padrão de query strings) antes
+// do match para que padrões com espaço, ponto-e-vírgula etc. sejam detectados
+// mesmo quando o cliente envia encoded ("union+select", "%3B+drop").
 func (s *SecurityAudit) DetectarSuspeito(r *http.Request) (bool, string) {
-	alvo := strings.ToLower(r.URL.Path + "?" + r.URL.RawQuery)
+	raw := r.URL.Path + "?" + r.URL.RawQuery
+	if decoded, err := url.QueryUnescape(strings.ReplaceAll(raw, "+", " ")); err == nil {
+		raw = decoded
+	}
+	alvo := strings.ToLower(raw)
 	for _, p := range s.padroes {
 		if strings.Contains(alvo, p) {
 			return true, p

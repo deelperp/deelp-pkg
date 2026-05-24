@@ -45,7 +45,7 @@ sobre `deelp-pkg` enquanto desenvolve em um serviço, use Go workspace:
 ```bash
 # uma única vez, na pasta-pai que contém todos os clones:
 cat > go.work <<'EOF'
-go 1.26.3
+go 1.23
 use (
     ./deelp-pkg
     ./ordem-service

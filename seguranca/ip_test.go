@@ -8,8 +8,6 @@ import (
 
 func TestIPDoRequest_PreferenciaXForwardedFor_PegaApenasPrimeiroIP(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/x", nil)
-	// Cenario classico: cliente -> proxy1 -> proxy2 -> app
-	// XFF = "cliente-real, proxy1, proxy2"
 	req.Header.Set("X-Forwarded-For", "203.0.113.10, 10.0.0.1, 10.0.0.2")
 	got := IPDoRequest(req)
 	if got != "203.0.113.10" {

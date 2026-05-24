@@ -91,7 +91,6 @@ func TestSecurityAudit_PadroesCustom(t *testing.T) {
 	if pad != "meu-padrao-secreto" {
 		t.Errorf("padrao retornado errado: %q", pad)
 	}
-	// E NAO detecta os padroes default (foram substituidos)
 	req2 := httptest.NewRequest(http.MethodGet, "/x?q=union+select", nil)
 	if susp2, _ := a.DetectarSuspeito(req2); susp2 {
 		t.Fatal("Padroes custom deve substituir os defaults")

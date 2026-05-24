@@ -89,7 +89,6 @@ func ValidarToken(tokenString, secret string) (Claims, error) {
 	return c, nil
 }
 
-// Erros retornados por ValidarToken. Use errors.Is para discriminar.
 var (
 	ErrTokenAusente  = errors.New("auth: token ausente")
 	ErrSecretAusente = errors.New("auth: secret ausente")

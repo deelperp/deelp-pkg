@@ -36,9 +36,6 @@ func TestNewCliente_ErroQuandoSemRegion(t *testing.T) {
 	}
 }
 
-// NewCliente real cria sessao AWS — não precisa de credenciais ativas para
-// instanciar (a session é lazy), mas o cliente pode ser usado offline para
-// testar getters.
 func TestCliente_Getters(t *testing.T) {
 	c, err := NewCliente(Config{
 		Region:    "us-east-1",

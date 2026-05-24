@@ -50,8 +50,6 @@ func TestOuPadraoDuration_RetornaPadraoQuandoZero(t *testing.T) {
 	}
 }
 
-// Conectar real precisa de Postgres rodando; aqui só validamos o caminho de erro
-// quando a Config é inválida (cobertura sem rede).
 func TestConectar_ErroSeConfigInvalida(t *testing.T) {
 	_, err := Conectar(nil, Config{})
 	if err == nil {

@@ -22,7 +22,6 @@ import (
 	"github.com/redis/go-redis/v9"
 )
 
-// Resposta padrão de bloqueio.
 type Bloqueio struct {
 	Sucesso  bool   `json:"sucesso"`
 	Mensagem string `json:"mensagem"`
@@ -101,7 +100,6 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		ip := IPDoRequest(r)
 		allowed, err := rl.Allow(r.Context(), ip)
 		if err != nil {
-			// Falha do Redis não pode derrubar o request — apenas loga e libera.
 			next.ServeHTTP(w, r)
 			return
 		}

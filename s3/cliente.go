@@ -36,9 +36,6 @@ type Config struct {
 	AccessKey string
 	SecretKey string
 
-	// CORSOrigin, se nao vazio, aplica uma politica CORS simples ao bucket
-	// no NewCliente (idempotente). Util quando o front-end consome
-	// presigned URLs diretamente.
 	CORSOrigin string
 
 	Logger *slog.Logger

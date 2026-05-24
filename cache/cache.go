@@ -29,8 +29,6 @@ type Config struct {
 	Password string
 	DB       int
 
-	// Timeouts. Quando zero, usa defaults conservadores. Em produção
-	// recomenda-se valores explícitos por serviço.
 	DialTimeout     time.Duration
 	ReadTimeout     time.Duration
 	WriteTimeout    time.Duration

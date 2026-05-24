@@ -38,13 +38,8 @@ import (
 type Protocolo string
 
 const (
-	// ProtocoloAuto detecta entre HTTP/gRPC pela presença de scheme
-	// (http://, https://) no Endpoint. Útil para retrocompatibilidade,
-	// mas prefira valores explícitos.
 	ProtocoloAuto Protocolo = "auto"
-	// ProtocoloGRPC usa otlptracegrpc + otlpmetricgrpc (porta padrão 4317).
 	ProtocoloGRPC Protocolo = "grpc"
-	// ProtocoloHTTP usa otlptracehttp + otlpmetrichttp (porta padrão 4318).
 	ProtocoloHTTP Protocolo = "http"
 )
 
@@ -83,7 +78,6 @@ func (c Config) protocoloEfetivo() Protocolo {
 	case ProtocoloGRPC, ProtocoloHTTP:
 		return c.Protocolo
 	}
-	// Auto / vazio: heurística por scheme
 	ep := c.Endpoint
 	if strings.HasPrefix(ep, "http://") || strings.HasPrefix(ep, "https://") {
 		return ProtocoloHTTP
