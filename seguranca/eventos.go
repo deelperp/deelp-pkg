@@ -54,6 +54,11 @@ func EmitirEvento(ctx context.Context, e EventoSeg) {
 		attrs = append(attrs, slog.Any(k, v))
 	}
 	slog.LogAttrs(ctx, slog.LevelInfo, "seguranca", attrs...)
+	servico := ""
+	if v, ok := e.Detalhes["servico"].(string); ok {
+		servico = v
+	}
+	MetricaEvento(ctx, e.Evento, servico)
 }
 
 // EmitirEventoRequest é um atalho que preenche IP, UserAgent, Path e Método

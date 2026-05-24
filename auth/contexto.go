@@ -53,6 +53,16 @@ func ClaimsDoContexto(ctx context.Context) (Claims, bool) {
 	return v, ok
 }
 
+// EmailDoContexto devolve o e-mail do usuário autenticado a partir das claims
+// injetadas pelo middleware. Retorna ("", false) quando não há claim.
+func EmailDoContexto(ctx context.Context) (string, bool) {
+	c, ok := ClaimsDoContexto(ctx)
+	if !ok || c.Email == "" {
+		return "", false
+	}
+	return c.Email, true
+}
+
 func UsuarioIdDoContexto(ctx context.Context) (uuid.UUID, bool) {
 	s, _ := ctx.Value(chaveUsuarioId).(string)
 	if s == "" {

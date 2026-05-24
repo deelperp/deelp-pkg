@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/deelperp/deelp-pkg/seguranca"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -28,12 +29,22 @@ type Responder func(w http.ResponseWriter, status int, mensagem string)
 // SecretKey é obrigatório — deve corresponder ao secret usado pelo
 // autenticacao-service para assinar tokens. Não há fallback.
 //
+// CookieName opcional: quando preenchido, o middleware também lê o token
+// de um cookie httpOnly com esse nome quando o header Authorization não
+// vem preenchido. Permite que o frontend web use cookie httpOnly enquanto
+// o mobile continua usando Authorization.
+//
 // Responder e Logger são opcionais.
 type Config struct {
-	SecretKey string
-	Responder Responder
-	Logger    *slog.Logger
+	SecretKey  string
+	CookieName string
+	Responder  Responder
+	Logger     *slog.Logger
 }
+
+// DefaultAccessCookieName é o nome canônico do cookie httpOnly de acesso.
+// Serviços que querem aceitar cookie usam Config{CookieName: DefaultAccessCookieName}.
+const DefaultAccessCookieName = "deelp_access"
 
 func responderPadrao(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "application/json")
@@ -126,6 +137,11 @@ func Autenticacao(cfg Config) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			raw := r.Header.Get("Authorization")
 			raw = strings.TrimSpace(strings.TrimPrefix(raw, "Bearer "))
+			if raw == "" && cfg.CookieName != "" {
+				if c, err := r.Cookie(cfg.CookieName); err == nil {
+					raw = strings.TrimSpace(c.Value)
+				}
+			}
 			if raw == "" {
 				resp(w, http.StatusUnauthorized, "Você precisa estar logado para realizar esta ação")
 				return
@@ -189,10 +205,12 @@ func TenantGuard(cfg Config) func(http.Handler) http.Handler {
 				return
 			}
 			if claims.EmpresaId == "" {
+				seguranca.MetricaTenantGuardBloqueio(r.Context(), "", "claim_sem_empresa")
 				resp(w, http.StatusForbidden, "Token sem vínculo de empresa. Selecione uma colaboração novamente.")
 				return
 			}
 			if !strings.EqualFold(claims.EmpresaId, pathEmp) {
+				seguranca.MetricaTenantGuardBloqueio(r.Context(), "", "claim_divergente")
 				resp(w, http.StatusForbidden, "Acesso negado: empresa solicitada não corresponde à sessão atual")
 				return
 			}
