@@ -119,17 +119,24 @@ func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 		ambiente = "unknown"
 	}
 
-	res, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes(
-			semconv.SchemaURL,
+	// resource.New combina atributos default + customizados respeitando o
+	// schema URL especificado. Evita o conflito que resource.Merge gera
+	// quando alguma dependência transitiva usa semconv de versão diferente
+	// (vide go.sum — otel/semconv v1.25 vs v1.27).
+	res, err := resource.New(ctx,
+		resource.WithSchemaURL(semconv.SchemaURL),
+		resource.WithAttributes(
 			semconv.ServiceNameKey.String(cfg.NomeServico),
 			semconv.ServiceVersionKey.String(versao),
 			semconv.DeploymentEnvironmentNameKey.String(ambiente),
 		),
+		resource.WithFromEnv(),
+		resource.WithProcess(),
+		resource.WithHost(),
+		resource.WithTelemetrySDK(),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("observabilidade: merge de resource falhou: %w", err)
+		return nil, fmt.Errorf("observabilidade: criar resource falhou: %w", err)
 	}
 
 	proto := cfg.protocoloEfetivo()
