@@ -1,6 +1,6 @@
 module github.com/deelperp/deelp-pkg
 
-go 1.26.3
+go 1.25.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.32.6
