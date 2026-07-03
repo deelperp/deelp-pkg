@@ -84,7 +84,6 @@ func (rl *RateLimiter) Allow(ctx context.Context, ip string) (bool, error) {
 
 func (rl *RateLimiter) allowRedis(ctx context.Context, ip string) (bool, error) {
 	key := rl.cfg.Prefixo + ip
-	// INCR + EXPIRE em pipeline: contador atômico por janela.
 	pipe := rl.cfg.Redis.TxPipeline()
 	incr := pipe.Incr(ctx, key)
 	pipe.Expire(ctx, key, rl.cfg.Janela)
@@ -112,8 +111,6 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
-
-// --- backend in-memory (fallback) ---
 
 type limiterMemoria struct {
 	mu     sync.Mutex
