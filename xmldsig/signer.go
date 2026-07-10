@@ -80,6 +80,9 @@ func (s *xmlSigner) Assinar(xmlBytes, pfxBytes []byte, senha, tagAlvo string) ([
 	ctx := dsig.NewDefaultSigningContext(keyStore)
 	ctx.Canonicalizer = canonicalizadorDFe()
 	ctx.Prefix = ""
+	// DFe usa o atributo "Id" (goxmldsig assume "ID"); sem isto a Reference sai
+	// com URI="" (documento inteiro) e a SEFAZ rejeita (215/225).
+	ctx.IdAttribute = "Id"
 	if err := ctx.SetSignatureMethod(dsig.RSASHA1SignatureMethod); err != nil {
 		return nil, fmt.Errorf("xmldsig: método de assinatura: %w", err)
 	}
