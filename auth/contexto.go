@@ -9,6 +9,7 @@ package auth
 
 import (
 	"context"
+	"strings"
 
 	"github.com/google/uuid"
 )
@@ -30,6 +31,8 @@ const (
 type Claims struct {
 	UsuarioId      string
 	Email          string
+	Nome           string
+	Sobrenome      string
 	EmpresaId      string
 	ColaboracaoId  string
 	DepartamentoId string
@@ -61,6 +64,22 @@ func EmailDoContexto(ctx context.Context) (string, bool) {
 		return "", false
 	}
 	return c.Email, true
+}
+
+// NomeCompletoDoContexto devolve "Nome Sobrenome" do JWT (fallback: e-mail).
+func NomeCompletoDoContexto(ctx context.Context) (string, bool) {
+	c, ok := ClaimsDoContexto(ctx)
+	if !ok {
+		return "", false
+	}
+	nome := strings.TrimSpace(strings.TrimSpace(c.Nome) + " " + strings.TrimSpace(c.Sobrenome))
+	if nome == "" {
+		nome = strings.TrimSpace(c.Email)
+	}
+	if nome == "" {
+		return "", false
+	}
+	return nome, true
 }
 
 func UsuarioIdDoContexto(ctx context.Context) (uuid.UUID, bool) {

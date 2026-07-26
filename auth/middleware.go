@@ -118,6 +118,8 @@ func extrairClaims(token *jwt.Token) Claims {
 	return Claims{
 		UsuarioId:      get("usuarioId"),
 		Email:          get("email"),
+		Nome:           get("nome"),
+		Sobrenome:      get("sobrenome"),
 		EmpresaId:      get("empresaId"),
 		ColaboracaoId:  get("colaboracaoId"),
 		DepartamentoId: get("departamentoId"),

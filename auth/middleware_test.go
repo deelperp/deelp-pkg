@@ -92,6 +92,9 @@ func TestAutenticacao_SemUsuarioId_Retorna401(t *testing.T) {
 func TestAutenticacao_TokenValido_PropagaClaims(t *testing.T) {
 	tok := gerarToken(t, jwt.MapClaims{
 		"usuarioId":      "user-1",
+		"email":          "user@deelp.com",
+		"nome":           "Ana",
+		"sobrenome":      "Silva",
 		"empresaId":      "emp-1",
 		"departamentoId": "dep-1",
 		"exp":            time.Now().Add(time.Hour).Unix(),
@@ -103,6 +106,12 @@ func TestAutenticacao_TokenValido_PropagaClaims(t *testing.T) {
 		c, ok := ClaimsDoContexto(r.Context())
 		if !ok || c.UsuarioId != "user-1" || c.EmpresaId != "emp-1" || c.DepartamentoId != "dep-1" {
 			t.Errorf("claims não propagadas corretamente: %+v ok=%v", c, ok)
+		}
+		if c.Nome != "Ana" || c.Sobrenome != "Silva" || c.Email != "user@deelp.com" {
+			t.Errorf("nome/e-mail não propagados: %+v", c)
+		}
+		if nome, okNome := NomeCompletoDoContexto(r.Context()); !okNome || nome != "Ana Silva" {
+			t.Errorf("NomeCompletoDoContexto: got %q ok=%v", nome, okNome)
 		}
 		w.WriteHeader(http.StatusOK)
 	})
