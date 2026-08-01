@@ -12,6 +12,7 @@ deelp-pkg/
 ├── go.mod                         module github.com/deelperp/deelp-pkg
 ├── auth/             import "github.com/deelperp/deelp-pkg/auth"
 ├── cache/            import "github.com/deelperp/deelp-pkg/cache"
+├── dfe/              import "github.com/deelperp/deelp-pkg/dfe"
 ├── mensageria/       import "github.com/deelperp/deelp-pkg/mensageria"
 ├── mongodb/          import "github.com/deelperp/deelp-pkg/mongodb"
 ├── observabilidade/  import "github.com/deelperp/deelp-pkg/observabilidade"
@@ -30,6 +31,7 @@ versionamento individual e funciona bem para o time pequeno do Deelp.
 |---|---|
 | `auth` | JWT middleware (Autenticacao + TenantGuard) + ValidarToken + context helpers |
 | `cache` | Cliente Redis padronizado (go-redis/v9) |
+| `dfe` | Chave S3 canônica de NF-e / MDF-e / NFS-e (`envio` / `proc` / `eventos`) |
 | `mensageria` | Conexão RabbitMQ + helpers de exchange/queue |
 | `mongodb` | Cliente Mongo + pool tuning + URI ou Host/Port |
 | `observabilidade` | OpenTelemetry (traces + metrics + W3C propagator) |
@@ -113,6 +115,16 @@ docker build --build-arg GH_PAT=$GH_PAT --file Dockerfile.prod -t imagem .
 
 ## Promover nova versão
 
+Atalho (compila, testa, commit+push de `main` se houver mudanças, cria tag):
+
+```bash
+./scripts/release-deelp-pkg.sh minor --mensagem "feat(dfe): chave S3 canônica"
+# ou só tagear o que já está em main:
+./scripts/tag-deelp-pkg.sh patch --com-testes
+```
+
+Passo a passo manual:
+
 1. Faça PR em `deelp-pkg`, mergeia em `main`.
 2. Crie tag:
    ```bash
@@ -125,6 +137,13 @@ docker build --build-arg GH_PAT=$GH_PAT --file Dockerfile.prod -t imagem .
    go mod tidy
    git commit -am "chore: bump deelp-pkg para v0.2.0"
    ```
+
+Ou propague nos 16 serviços Go de uma vez:
+
+```bash
+./scripts/upgrade-versao-pkg.sh v0.4.0
+./scripts/commit-push-upgrade-pkg.sh v0.4.0
+```
 
 Use versionamento semântico: `v1.x.x` é API estável; quebra de API exige
 mudar o module path para `github.com/deelperp/deelp-pkg/v2`.
