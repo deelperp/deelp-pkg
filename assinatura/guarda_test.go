@@ -1,0 +1,162 @@
+package assinatura
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/deelperp/deelp-pkg/auth"
+)
+
+type checkerFake struct {
+	ativo   bool
+	motivo  string
+	erro    error
+	chamado bool
+}
+
+func (c *checkerFake) ContratoAtivo(context.Context, string) (bool, string, error) {
+	c.chamado = true
+	return c.ativo, c.motivo, c.erro
+}
+
+func destinoOK() (http.Handler, *bool) {
+	alcancado := false
+	return http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		alcancado = true
+		w.WriteHeader(http.StatusOK)
+	}), &alcancado
+}
+
+func requisicaoComTenant(metodo string) *http.Request {
+	req := httptest.NewRequest(metodo, "/ordem-service/v1/pedidos", nil)
+	ctx := auth.ComClaims(req.Context(), auth.Claims{
+		UsuarioId: "11111111-1111-1111-1111-111111111111",
+		EmpresaId: "22222222-2222-2222-2222-222222222222",
+	})
+	return req.WithContext(ctx)
+}
+
+func TestGuarda_ContratoAtivoPassa(t *testing.T) {
+	destino, alcancado := destinoOK()
+	rec := httptest.NewRecorder()
+
+	RequerContratoAtivo(Config{}, &checkerFake{ativo: true})(destino).
+		ServeHTTP(rec, requisicaoComTenant(http.MethodPost))
+
+	if !*alcancado || rec.Code != http.StatusOK {
+		t.Errorf("contrato ativo deveria passar: alcancado=%v status=%d", *alcancado, rec.Code)
+	}
+}
+
+func TestGuarda_ContratoInativoDevolve402(t *testing.T) {
+	destino, alcancado := destinoOK()
+	rec := httptest.NewRecorder()
+
+	RequerContratoAtivo(Config{}, &checkerFake{ativo: false, motivo: "expirado"})(destino).
+		ServeHTTP(rec, requisicaoComTenant(http.MethodPost))
+
+	if *alcancado {
+		t.Error("requisição não deveria alcançar o handler com contrato inativo")
+	}
+	// 402 e não 403: o cliente precisa distinguir bloqueio por pagamento de
+	// bloqueio por permissão para abrir a tela certa.
+	if rec.Code != http.StatusPaymentRequired {
+		t.Fatalf("status = %d, esperado 402", rec.Code)
+	}
+
+	var corpo Erro
+	if err := json.Unmarshal(rec.Body.Bytes(), &corpo); err != nil {
+		t.Fatalf("corpo ilegível: %v", err)
+	}
+	if corpo.Motivo != MotivoContratoInativo {
+		t.Errorf("motivo = %q, esperado %q", corpo.Motivo, MotivoContratoInativo)
+	}
+}
+
+// Fail-open deliberado: cliente-service fora não pode derrubar a escrita de
+// todos os clientes adimplentes.
+func TestGuarda_ErroDeTransporteDeixaPassar(t *testing.T) {
+	destino, alcancado := destinoOK()
+	rec := httptest.NewRecorder()
+
+	RequerContratoAtivo(Config{}, &checkerFake{erro: errors.New("cliente-service fora")})(destino).
+		ServeHTTP(rec, requisicaoComTenant(http.MethodPost))
+
+	if !*alcancado {
+		t.Error("erro de transporte deve deixar passar, não bloquear a plataforma inteira")
+	}
+}
+
+func TestGuarda_CheckerNaoConfiguradoDeixaPassar(t *testing.T) {
+	destino, alcancado := destinoOK()
+	rec := httptest.NewRecorder()
+
+	RequerContratoAtivo(Config{}, nil)(destino).
+		ServeHTTP(rec, requisicaoComTenant(http.MethodPost))
+
+	if !*alcancado {
+		t.Error("checker ausente não deve bloquear")
+	}
+}
+
+// Sem claims quem barra é o auth.Autenticacao. Este middleware não deve
+// inventar bloqueio para requisição que nem chegou a ter tenant.
+func TestGuarda_SemTenantNaoConsulta(t *testing.T) {
+	destino, alcancado := destinoOK()
+	checker := &checkerFake{ativo: false}
+	rec := httptest.NewRecorder()
+
+	req := httptest.NewRequest(http.MethodPost, "/qualquer", nil)
+	RequerContratoAtivo(Config{}, checker)(destino).ServeHTTP(rec, req)
+
+	if checker.chamado {
+		t.Error("não deveria consultar contrato sem tenant no contexto")
+	}
+	if !*alcancado {
+		t.Error("requisição sem tenant deve seguir para o próximo middleware")
+	}
+}
+
+// Leitura fica aberta mesmo com contrato inativo: o cliente bloqueado precisa
+// ver os próprios dados e chegar até a tela de pagamento.
+func TestApenasEscrita_LeituraPassaComContratoInativo(t *testing.T) {
+	checker := &checkerFake{ativo: false, motivo: "expirado"}
+	gate := ApenasEscrita(RequerContratoAtivo(Config{}, checker))
+
+	for _, metodo := range []string{http.MethodGet, http.MethodHead, http.MethodOptions} {
+		t.Run(metodo, func(t *testing.T) {
+			destino, alcancado := destinoOK()
+			rec := httptest.NewRecorder()
+
+			gate(destino).ServeHTTP(rec, requisicaoComTenant(metodo))
+
+			if !*alcancado {
+				t.Errorf("%s deveria passar mesmo com contrato inativo", metodo)
+			}
+			if rec.Code == http.StatusPaymentRequired {
+				t.Errorf("%s não deveria devolver 402", metodo)
+			}
+		})
+	}
+}
+
+func TestApenasEscrita_EscritaBloqueia(t *testing.T) {
+	gate := ApenasEscrita(RequerContratoAtivo(Config{}, &checkerFake{ativo: false, motivo: "expirado"}))
+
+	for _, metodo := range []string{http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		t.Run(metodo, func(t *testing.T) {
+			destino, alcancado := destinoOK()
+			rec := httptest.NewRecorder()
+
+			gate(destino).ServeHTTP(rec, requisicaoComTenant(metodo))
+
+			if *alcancado || rec.Code != http.StatusPaymentRequired {
+				t.Errorf("%s deveria devolver 402: alcancado=%v status=%d", metodo, *alcancado, rec.Code)
+			}
+		})
+	}
+}
