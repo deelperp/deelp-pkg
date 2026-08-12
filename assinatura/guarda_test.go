@@ -12,14 +12,16 @@ import (
 )
 
 type checkerFake struct {
-	ativo   bool
-	motivo  string
-	erro    error
-	chamado bool
+	ativo          bool
+	motivo         string
+	erro           error
+	chamado        bool
+	bearerRecebido string
 }
 
-func (c *checkerFake) ContratoAtivo(context.Context, string) (bool, string, error) {
+func (c *checkerFake) ContratoAtivo(_ context.Context, bearer, _ string) (bool, string, error) {
 	c.chamado = true
+	c.bearerRecebido = bearer
 	return c.ativo, c.motivo, c.erro
 }
 
@@ -33,11 +35,24 @@ func destinoOK() (http.Handler, *bool) {
 
 func requisicaoComTenant(metodo string) *http.Request {
 	req := httptest.NewRequest(metodo, "/ordem-service/v1/pedidos", nil)
+	req.Header.Set("Authorization", "Bearer tok123")
 	ctx := auth.ComClaims(req.Context(), auth.Claims{
 		UsuarioId: "11111111-1111-1111-1111-111111111111",
 		EmpresaId: "22222222-2222-2222-2222-222222222222",
 	})
 	return req.WithContext(ctx)
+}
+
+func TestGuarda_RepassaBearerDoRequestAoChecker(t *testing.T) {
+	destino, _ := destinoOK()
+	checker := &checkerFake{ativo: true}
+	rec := httptest.NewRecorder()
+
+	RequerContratoAtivo(Config{}, checker)(destino).ServeHTTP(rec, requisicaoComTenant(http.MethodPost))
+
+	if checker.bearerRecebido != "Bearer tok123" {
+		t.Fatalf("bearer repassado ao checker = %q, esperado %q", checker.bearerRecebido, "Bearer tok123")
+	}
 }
 
 func TestGuarda_ContratoAtivoPassa(t *testing.T) {

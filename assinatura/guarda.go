@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/deelperp/deelp-pkg/auth"
 )
@@ -29,11 +30,12 @@ type Erro struct {
 // verificar" — é diferente de "não pode", e o middleware trata os dois casos de
 // forma distinta.
 type Checker interface {
-	ContratoAtivo(ctx context.Context, empresaId string) (ativo bool, motivo string, err error)
+	ContratoAtivo(ctx context.Context, bearer, empresaId string) (ativo bool, motivo string, err error)
 }
 
 type Config struct {
-	Logger *slog.Logger
+	Logger     *slog.Logger
+	CookieName string
 }
 
 func (c Config) log(msg string, args ...any) {
@@ -74,7 +76,7 @@ func RequerContratoAtivo(cfg Config, checker Checker) func(http.Handler) http.Ha
 				return
 			}
 
-			ativo, motivo, err := checker.ContratoAtivo(r.Context(), empresaId)
+			ativo, motivo, err := checker.ContratoAtivo(r.Context(), bearerDoRequest(r, cfg.CookieName), empresaId)
 			if err != nil {
 				cfg.log("assinatura: falha ao verificar contrato, requisição liberada",
 					"empresaId", empresaId, "erro", err)
@@ -90,6 +92,19 @@ func RequerContratoAtivo(cfg Config, checker Checker) func(http.Handler) http.Ha
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func bearerDoRequest(r *http.Request, cookieName string) string {
+	raw := strings.TrimSpace(r.Header.Get("Authorization"))
+	if raw != "" {
+		return raw
+	}
+	if cookieName != "" {
+		if c, err := r.Cookie(cookieName); err == nil {
+			return strings.TrimSpace(c.Value)
+		}
+	}
+	return ""
 }
 
 func responder(w http.ResponseWriter, situacao string) {

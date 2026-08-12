@@ -22,34 +22,29 @@ type entradaCache struct {
 	expiraEm time.Time
 }
 
-// HTTPChecker consulta a situação do contrato no cliente-service.
-//
-// O cache é por processo (cada réplica mantém o seu). Não usa Redis de
-// propósito: a consequência de uma réplica ter dado 2 minutos mais velho é
-// irrelevante aqui, e uma dependência a mais no caminho de escrita seria mais
-// um ponto de falha.
+// HTTPChecker consulta a situação do contrato no cliente-service repassando o
+// Bearer do request original, mesmo padrão de pkg/authz.HTTPChecker. O cache é
+// por processo (cada réplica mantém o seu); não usa Redis de propósito.
 type HTTPChecker struct {
-	baseURL     string
-	internalKey string
-	httpClient  *http.Client
+	baseURL    string
+	httpClient *http.Client
 
 	mu    sync.RWMutex
 	cache map[string]entradaCache
 	agora func() time.Time
 }
 
-func NovoHTTPChecker(baseURL, internalKey string) *HTTPChecker {
+func NewHTTPChecker(baseURL string) *HTTPChecker {
 	return &HTTPChecker{
-		baseURL:     baseURL,
-		internalKey: internalKey,
-		httpClient:  &http.Client{Timeout: 5 * time.Second},
-		cache:       map[string]entradaCache{},
-		agora:       time.Now,
+		baseURL:    baseURL,
+		httpClient: &http.Client{Timeout: 5 * time.Second},
+		cache:      map[string]entradaCache{},
+		agora:      time.Now,
 	}
 }
 
-func (c *HTTPChecker) ContratoAtivo(ctx context.Context, empresaId string) (bool, string, error) {
-	if c.baseURL == "" || c.internalKey == "" {
+func (c *HTTPChecker) ContratoAtivo(ctx context.Context, bearer, empresaId string) (bool, string, error) {
+	if c.baseURL == "" || bearer == "" {
 		return false, "", fmt.Errorf("assinatura: checker não configurado")
 	}
 
@@ -57,7 +52,7 @@ func (c *HTTPChecker) ContratoAtivo(ctx context.Context, empresaId string) (bool
 		return entrada.ativo, entrada.motivo, nil
 	}
 
-	ativo, motivo, err := c.consultar(ctx, empresaId)
+	ativo, motivo, err := c.consultar(ctx, bearer)
 	if err != nil {
 		return false, "", err
 	}
@@ -82,14 +77,14 @@ func (c *HTTPChecker) guardar(empresaId string, entrada entradaCache) {
 	c.cache[empresaId] = entrada
 }
 
-func (c *HTTPChecker) consultar(ctx context.Context, empresaId string) (bool, string, error) {
-	endpoint := fmt.Sprintf("%s/cliente-service/v1/assinatura/interno/%s", c.baseURL, empresaId)
+func (c *HTTPChecker) consultar(ctx context.Context, bearer string) (bool, string, error) {
+	endpoint := fmt.Sprintf("%s/cliente-service/v1/assinatura/contrato-situacao", c.baseURL)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	if err != nil {
 		return false, "", err
 	}
-	req.Header.Set("X-Internal-Key", c.internalKey)
+	req.Header.Set("Authorization", bearer)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
