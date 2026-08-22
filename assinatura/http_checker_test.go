@@ -187,3 +187,9 @@ func TestHTTPChecker_CachePorEmpresa(t *testing.T) {
 		t.Fatal("empresa-2 deveria estar inativa")
 	}
 }
+
+func TestChecker_BloqueioExpiraAntesDoLiberado(t *testing.T) {
+	if TTLCacheBloqueado >= TTLCache {
+		t.Fatal("TTL de bloqueio deve ser menor que o de liberado")
+	}
+}

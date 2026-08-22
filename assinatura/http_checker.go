@@ -16,6 +16,12 @@ import (
 // o bastante para não fazer uma chamada HTTP por requisição de escrita.
 const TTLCache = 2 * time.Minute
 
+// TTLCacheBloqueado é bem menor de propósito. O cache é assimétrico porque o
+// erro é assimétrico: guardar "liberado" por 2 minutos custa uma janela curta
+// de uso indevido, enquanto guardar "bloqueado" pelo mesmo tempo deixa quem
+// acabou de contratar tomando 402 depois de ver "plano ativado" na tela.
+const TTLCacheBloqueado = 10 * time.Second
+
 type entradaCache struct {
 	ativo    bool
 	motivo   string
@@ -57,7 +63,12 @@ func (c *HTTPChecker) ContratoAtivo(ctx context.Context, bearer, empresaId strin
 		return false, "", err
 	}
 
-	c.guardar(empresaId, entradaCache{ativo: ativo, motivo: motivo, expiraEm: c.agora().Add(TTLCache)})
+	ttl := TTLCache
+	if !ativo {
+		ttl = TTLCacheBloqueado
+	}
+
+	c.guardar(empresaId, entradaCache{ativo: ativo, motivo: motivo, expiraEm: c.agora().Add(ttl)})
 	return ativo, motivo, nil
 }
 
