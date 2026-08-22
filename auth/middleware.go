@@ -115,15 +115,17 @@ func extrairClaims(token *jwt.Token) Claims {
 		v, _ := (*mc)[k].(string)
 		return v
 	}
+	admin, _ := (*mc)["isPlatformAdmin"].(bool)
 	return Claims{
-		UsuarioId:      get("usuarioId"),
-		Email:          get("email"),
-		Nome:           get("nome"),
-		Sobrenome:      get("sobrenome"),
-		EmpresaId:      get("empresaId"),
-		ColaboracaoId:  get("colaboracaoId"),
-		DepartamentoId: get("departamentoId"),
-		CargoId:        get("cargoId"),
+		IsPlatformAdmin: admin,
+		UsuarioId:       get("usuarioId"),
+		Email:           get("email"),
+		Nome:            get("nome"),
+		Sobrenome:       get("sobrenome"),
+		EmpresaId:       get("empresaId"),
+		ColaboracaoId:   get("colaboracaoId"),
+		DepartamentoId:  get("departamentoId"),
+		CargoId:         get("cargoId"),
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/deelperp/deelp-pkg/auth"
@@ -173,5 +174,79 @@ func TestApenasEscrita_EscritaBloqueia(t *testing.T) {
 				t.Errorf("%s deveria devolver 402: alcancado=%v status=%d", metodo, *alcancado, rec.Code)
 			}
 		})
+	}
+}
+
+func requisicaoEm(metodo, caminho string) *http.Request {
+	req := httptest.NewRequest(metodo, caminho, nil)
+	req.Header.Set("Authorization", "Bearer tok123")
+	ctx := auth.ComClaims(req.Context(), auth.Claims{
+		UsuarioId: "11111111-1111-1111-1111-111111111111",
+		EmpresaId: "22222222-2222-2222-2222-222222222222",
+	})
+	return req.WithContext(ctx)
+}
+
+// Sem a liberação o gate barrava o próprio caminho de pagamento, e o cliente
+// bloqueado não tinha como voltar a ficar adimplente.
+func TestGuarda_RotaLiberadaPassaComContratoInativo(t *testing.T) {
+	destino, alcancado := destinoOK()
+	checker := &checkerFake{ativo: false, motivo: SituacaoExpirado}
+	cfg := Config{RotasLiberadas: []string{"/cliente-service/v1/assinatura/contratar"}}
+	rec := httptest.NewRecorder()
+
+	RequerContratoAtivo(cfg, checker)(destino).
+		ServeHTTP(rec, requisicaoEm(http.MethodPost, "/cliente-service/v1/assinatura/contratar"))
+
+	if !*alcancado {
+		t.Fatal("rota de contratação deveria passar com contrato expirado")
+	}
+	if checker.chamado {
+		t.Fatal("rota liberada não deveria consultar o checker")
+	}
+}
+
+func TestGuarda_RotaNaoLiberadaSegueBloqueada(t *testing.T) {
+	destino, alcancado := destinoOK()
+	checker := &checkerFake{ativo: false, motivo: SituacaoExpirado}
+	cfg := Config{RotasLiberadas: []string{"/cliente-service/v1/assinatura/contratar"}}
+	rec := httptest.NewRecorder()
+
+	RequerContratoAtivo(cfg, checker)(destino).
+		ServeHTTP(rec, requisicaoEm(http.MethodPost, "/cliente-service/v1/clientes"))
+
+	if *alcancado {
+		t.Fatal("rota comum deveria continuar bloqueada")
+	}
+	if rec.Code != http.StatusPaymentRequired {
+		t.Fatalf("status = %d, esperado 402", rec.Code)
+	}
+}
+
+func TestGuarda_MensagemDistinguePorSituacao(t *testing.T) {
+	casos := map[string]string{
+		SituacaoExpirado:     "período de teste",
+		SituacaoInadimplente: "cobrança em aberto",
+		SituacaoSuspenso:     "suspensa",
+		SituacaoCancelado:    "cancelado",
+	}
+
+	for situacao, trecho := range casos {
+		destino, _ := destinoOK()
+		rec := httptest.NewRecorder()
+
+		RequerContratoAtivo(Config{}, &checkerFake{ativo: false, motivo: situacao})(destino).
+			ServeHTTP(rec, requisicaoComTenant(http.MethodPost))
+
+		var corpo Erro
+		if err := json.NewDecoder(rec.Body).Decode(&corpo); err != nil {
+			t.Fatalf("%s: corpo ilegível: %v", situacao, err)
+		}
+		if corpo.Situacao != situacao {
+			t.Fatalf("%s: situacao no corpo = %q", situacao, corpo.Situacao)
+		}
+		if !strings.Contains(strings.ToLower(corpo.Mensagem), trecho) {
+			t.Fatalf("%s: mensagem %q não menciona %q", situacao, corpo.Mensagem, trecho)
+		}
 	}
 }

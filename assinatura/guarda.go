@@ -20,10 +20,19 @@ import (
 // por pagamento (402) de bloqueio por permissão (403).
 const MotivoContratoInativo = "contrato_inativo"
 
+const (
+	SituacaoExpirado     = "expirado"
+	SituacaoInadimplente = "inadimplente"
+	SituacaoSuspenso     = "suspenso"
+	SituacaoCancelado    = "cancelado"
+	SituacaoSemContrato  = "sem_contrato"
+)
+
 type Erro struct {
 	Sucesso  bool   `json:"sucesso"`
 	Mensagem string `json:"mensagem"`
 	Motivo   string `json:"motivo,omitempty"`
+	Situacao string `json:"situacao,omitempty"`
 }
 
 // Checker informa se o tenant pode operar. Erro significa "não consegui
@@ -36,12 +45,25 @@ type Checker interface {
 type Config struct {
 	Logger     *slog.Logger
 	CookieName string
+	// RotasLiberadas são prefixos de caminho que seguem abertos com contrato
+	// bloqueado. Sem isso o gate barra o próprio POST de contratação, e o
+	// cliente expirado fica sem como voltar a pagar.
+	RotasLiberadas []string
 }
 
 func (c Config) log(msg string, args ...any) {
 	if c.Logger != nil {
 		c.Logger.Warn(msg, args...)
 	}
+}
+
+func (c Config) liberada(caminho string) bool {
+	for _, prefixo := range c.RotasLiberadas {
+		if prefixo != "" && strings.HasPrefix(caminho, prefixo) {
+			return true
+		}
+	}
+	return false
 }
 
 // RequerContratoAtivo bloqueia a requisição quando o contrato do tenant não
@@ -64,6 +86,11 @@ func (c Config) log(msg string, args ...any) {
 func RequerContratoAtivo(cfg Config, checker Checker) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if cfg.liberada(r.URL.Path) {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			empresaId, ok := auth.EmpresaIdClaimString(r.Context())
 			if !ok || empresaId == "" {
 				next.ServeHTTP(w, r)
@@ -108,9 +135,19 @@ func bearerDoRequest(r *http.Request, cookieName string) string {
 }
 
 func responder(w http.ResponseWriter, situacao string) {
-	mensagem := "O contrato da sua empresa não está ativo. Regularize a assinatura para continuar."
-	if situacao == "expirado" {
-		mensagem = "O período contratado terminou. Escolha um plano para continuar usando a plataforma."
+	var mensagem string
+
+	switch situacao {
+	case SituacaoExpirado:
+		mensagem = "O período de teste terminou. Escolha um plano para continuar usando a plataforma."
+	case SituacaoInadimplente:
+		mensagem = "Há uma cobrança em aberto. Regularize o pagamento para voltar a lançar; a consulta e a exportação dos seus dados seguem liberadas."
+	case SituacaoSuspenso:
+		mensagem = "A assinatura está suspensa por falta de pagamento. Regularize o débito para reativar a plataforma."
+	case SituacaoCancelado:
+		mensagem = "O contrato foi cancelado. Fale com o suporte para reativar a assinatura."
+	default:
+		mensagem = "O contrato da sua empresa não está ativo. Regularize a assinatura para continuar."
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -119,6 +156,7 @@ func responder(w http.ResponseWriter, situacao string) {
 		Sucesso:  false,
 		Mensagem: mensagem,
 		Motivo:   MotivoContratoInativo,
+		Situacao: situacao,
 	})
 }
 

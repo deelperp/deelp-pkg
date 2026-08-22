@@ -37,6 +37,16 @@ type Claims struct {
 	ColaboracaoId  string
 	DepartamentoId string
 	CargoId        string
+	// Emitido por autenticacao-service a partir de PLATFORM_ADMIN_EMAILS.
+	// Habilita as telas de operação da própria Deelp, que agem sobre outros
+	// tenants e por isso ficam fora do recorte por empresaId.
+	IsPlatformAdmin bool
+}
+
+// EhPlatformAdminDoContexto informa se o token é de um operador da plataforma.
+func EhPlatformAdminDoContexto(ctx context.Context) bool {
+	c, ok := ClaimsDoContexto(ctx)
+	return ok && c.IsPlatformAdmin
 }
 
 // ComClaims devolve um context.Context com as claims injetadas. Use para
