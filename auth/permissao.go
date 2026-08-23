@@ -107,6 +107,63 @@ func RequerPermissaoRemota(cfg Config, checker PermissaoCheckerRemoto, modulo, a
 	}
 }
 
+// RequerQualquerPermissaoRemota libera a rota quando o usuário tem QUALQUER um
+// dos pares modulo:acao informados.
+//
+// Existe para recurso que é lido por telas de módulos diferentes — a
+// configuração da empresa, por exemplo, alimenta tanto a tela de configurações
+// quanto o formulário de emissão de NF-e. Exigir um módulo só ali obrigaria
+// todo cargo que emite nota a carregar também permissão de configuração.
+//
+// Continua fail-closed: lista vazia, checker ausente ou erro de consulta negam.
+func RequerQualquerPermissaoRemota(cfg Config, checker PermissaoCheckerRemoto, pares ...ModuloAcao) func(http.Handler) http.Handler {
+	resp := cfg.responder()
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			claims, ok := ClaimsDoContexto(r.Context())
+			if !ok || claims.UsuarioId == "" {
+				resp(w, http.StatusUnauthorized, "Você precisa estar logado para realizar esta ação")
+				return
+			}
+			if claims.EmpresaId == "" {
+				resp(w, http.StatusForbidden, "Token sem vínculo de empresa. Selecione uma colaboração novamente.")
+				return
+			}
+			if checker == nil || len(pares) == 0 {
+				cfg.log("auth.RequerQualquerPermissaoRemota: checker nil ou lista vazia")
+				resp(w, http.StatusForbidden, "Autorização indisponível")
+				return
+			}
+
+			bearer := bearerDoRequest(r, cfg.CookieName)
+			var ultimoErro error
+			for _, par := range pares {
+				permitido, err := checker.TemPermissao(r.Context(), bearer, claims.UsuarioId, par.Modulo, par.Acao)
+				if err != nil {
+					ultimoErro = err
+					continue
+				}
+				if permitido {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			if ultimoErro != nil {
+				cfg.log("auth.RequerQualquerPermissaoRemota: erro no checker", "erro", ultimoErro)
+				resp(w, http.StatusForbidden, "Não foi possível validar sua permissão")
+				return
+			}
+			resp(w, http.StatusForbidden, "Você não tem permissão para realizar esta ação")
+		})
+	}
+}
+
+// ModuloAcao é um par do catálogo de permissões.
+type ModuloAcao struct {
+	Modulo string
+	Acao   string
+}
+
 // BearerDoRequest extrai o token do header Authorization ou, na ausência dele,
 // do cookie cookieName. Exposto para handlers que precisam consultar permissão
 // dentro do fluxo — quando a rota não é bloqueada por inteiro, apenas parte da
