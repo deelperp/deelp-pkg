@@ -107,6 +107,14 @@ func RequerPermissaoRemota(cfg Config, checker PermissaoCheckerRemoto, modulo, a
 	}
 }
 
+// BearerDoRequest extrai o token do header Authorization ou, na ausência dele,
+// do cookie cookieName. Exposto para handlers que precisam consultar permissão
+// dentro do fluxo — quando a rota não é bloqueada por inteiro, apenas parte da
+// resposta é omitida.
+func BearerDoRequest(r *http.Request, cookieName string) string {
+	return bearerDoRequest(r, cookieName)
+}
+
 func bearerDoRequest(r *http.Request, cookieName string) string {
 	raw := strings.TrimSpace(r.Header.Get("Authorization"))
 	if raw != "" {
