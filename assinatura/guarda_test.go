@@ -177,6 +177,21 @@ func TestApenasEscrita_EscritaBloqueia(t *testing.T) {
 	}
 }
 
+func TestApenasEscrita_PostPesquisarPassaComContratoInativo(t *testing.T) {
+	gate := ApenasEscrita(RequerContratoAtivo(Config{}, &checkerFake{ativo: false, motivo: "suspenso"}))
+	destino, alcancado := destinoOK()
+	rec := httptest.NewRecorder()
+
+	gate(destino).ServeHTTP(rec, requisicaoEm(http.MethodPost, "/cliente-service/v1/clientes/pesquisar"))
+
+	if !*alcancado {
+		t.Fatal("POST /pesquisar é leitura e deve passar com contrato inativo")
+	}
+	if rec.Code == http.StatusPaymentRequired {
+		t.Fatal("POST /pesquisar não deveria devolver 402")
+	}
+}
+
 func requisicaoEm(metodo, caminho string) *http.Request {
 	req := httptest.NewRequest(metodo, caminho, nil)
 	req.Header.Set("Authorization", "Bearer tok123")

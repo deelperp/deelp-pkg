@@ -125,7 +125,8 @@ func extrairClaims(token *jwt.Token) Claims {
 		EmpresaId:       get("empresaId"),
 		ColaboracaoId:   get("colaboracaoId"),
 		DepartamentoId:  get("departamentoId"),
-		CargoId:         get("cargoId"),
+		CargoId:          get("cargoId"),
+		SuporteEmpresaId: get("suporteEmpresaId"),
 	}
 }
 
@@ -170,6 +171,10 @@ func Autenticacao(cfg Config) func(http.Handler) http.Handler {
 			claims := extrairClaims(parsed)
 			if claims.UsuarioId == "" {
 				resp(w, http.StatusUnauthorized, "Token sem identificação do usuário")
+				return
+			}
+			if claims.SuporteEmpresaId != "" && !EhRequisicaoDeLeitura(r) {
+				resp(w, http.StatusForbidden, "Sessão de suporte é somente leitura")
 				return
 			}
 

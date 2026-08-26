@@ -53,20 +53,24 @@ func NewHTTPChecker(baseURL string) *HTTPChecker {
 	}
 }
 
-func (c *HTTPChecker) doCache(usuarioId string) (map[string][]string, bool) {
+func (c *HTTPChecker) doCache(chave string) (map[string][]string, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	entrada, ok := c.cache[usuarioId]
+	entrada, ok := c.cache[chave]
 	if !ok || c.agora().After(entrada.expiraEm) {
 		return nil, false
 	}
 	return entrada.permissoes, true
 }
 
-func (c *HTTPChecker) guardar(usuarioId string, permissoes map[string][]string) {
+func (c *HTTPChecker) guardar(chave string, permissoes map[string][]string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.cache[usuarioId] = entradaCache{permissoes: permissoes, expiraEm: c.agora().Add(TTLCache)}
+	c.cache[chave] = entradaCache{permissoes: permissoes, expiraEm: c.agora().Add(TTLCache)}
+}
+
+func chaveCache(usuarioId, bearer string) string {
+	return usuarioId + "\x00" + bearer
 }
 
 // Invalidar descarta as permissões em cache do usuário. Usar quando o próprio
@@ -74,7 +78,12 @@ func (c *HTTPChecker) guardar(usuarioId string, permissoes map[string][]string) 
 func (c *HTTPChecker) Invalidar(usuarioId string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	delete(c.cache, usuarioId)
+	prefixo := usuarioId + "\x00"
+	for k := range c.cache {
+		if k == usuarioId || strings.HasPrefix(k, prefixo) {
+			delete(c.cache, k)
+		}
+	}
 }
 
 func contem(acoes []string, acao string) bool {
@@ -93,7 +102,7 @@ func (c *HTTPChecker) TemPermissao(ctx context.Context, bearer, usuarioId, modul
 	if c.baseURL == "" {
 		return false, fmt.Errorf("AUTENTICACAO_SERVICE_URL não configurada")
 	}
-	if permissoes, ok := c.doCache(usuarioId); ok {
+	if permissoes, ok := c.doCache(chaveCache(usuarioId, bearer)); ok {
 		return contem(permissoes[modulo], acao), nil
 	}
 	url := fmt.Sprintf("%s/autenticacao-service/v1/usuarios/%s/permissoes", c.baseURL, usuarioId)
@@ -133,6 +142,6 @@ func (c *HTTPChecker) TemPermissao(ctx context.Context, bearer, usuarioId, modul
 		return false, nil
 	}
 
-	c.guardar(usuarioId, parsed.Conteudo)
+	c.guardar(chaveCache(usuarioId, bearer), parsed.Conteudo)
 	return contem(parsed.Conteudo[modulo], acao), nil
 }

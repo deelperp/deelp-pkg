@@ -169,12 +169,11 @@ func ApenasEscrita(middleware func(http.Handler) http.Handler) func(http.Handler
 	return func(next http.Handler) http.Handler {
 		comGate := middleware(next)
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			switch r.Method {
-			case http.MethodGet, http.MethodHead, http.MethodOptions:
+			if auth.EhRequisicaoDeLeitura(r) {
 				next.ServeHTTP(w, r)
-			default:
-				comGate.ServeHTTP(w, r)
+				return
 			}
+			comGate.ServeHTTP(w, r)
 		})
 	}
 }

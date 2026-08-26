@@ -145,3 +145,19 @@ func TestTemPermissao_ErroNaoEhCacheado(t *testing.T) {
 		t.Errorf("fez %d chamadas, esperado 3 — erro não deve virar cache", chamadas)
 	}
 }
+
+func TestTemPermissao_TokensDiferentesNaoCompartilhamCache(t *testing.T) {
+	chamadas := 0
+	srv := servidorPermissoes(t, &chamadas)
+	defer srv.Close()
+
+	checker := NewHTTPChecker(srv.URL)
+	ctx := context.Background()
+
+	_, _ = checker.TemPermissao(ctx, "Bearer suporte", "usuario-1", "producao", "criar")
+	_, _ = checker.TemPermissao(ctx, "Bearer operador", "usuario-1", "producao", "criar")
+
+	if chamadas != 2 {
+		t.Errorf("fez %d chamadas, esperado 2 (tokens diferentes)", chamadas)
+	}
+}

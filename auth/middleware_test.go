@@ -129,6 +129,141 @@ func TestAutenticacao_TokenValido_PropagaClaims(t *testing.T) {
 	}
 }
 
+func tokenSuporte(t *testing.T, extra jwt.MapClaims) string {
+	t.Helper()
+	claims := jwt.MapClaims{
+		"usuarioId":        "op-1",
+		"email":            "op@deelp.com",
+		"empresaId":        "emp-alvo",
+		"suporteEmpresaId": "emp-alvo",
+		"cargoId":          "cargo-titular",
+		"exp":              time.Now().Add(time.Hour).Unix(),
+	}
+	for k, v := range extra {
+		claims[k] = v
+	}
+	return gerarToken(t, claims)
+}
+
+func TestAutenticacao_SessaoSuporte_GETPassa(t *testing.T) {
+	h := Autenticacao(Config{SecretKey: secret})(handlerOK())
+	req := httptest.NewRequest(http.MethodGet, "/cliente-service/v1/clientes/abc", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenSuporte(t, nil))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET de suporte deveria passar, obtido %d", rec.Code)
+	}
+}
+
+func TestAutenticacao_SessaoSuporte_PostPesquisarPassa(t *testing.T) {
+	h := Autenticacao(Config{SecretKey: secret})(handlerOK())
+	req := httptest.NewRequest(http.MethodPost, "/cliente-service/v1/clientes/pesquisar", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenSuporte(t, nil))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST pesquisar de suporte deveria passar, obtido %d", rec.Code)
+	}
+}
+
+func TestAutenticacao_SessaoSuporte_PostEscrita403(t *testing.T) {
+	h := Autenticacao(Config{SecretKey: secret})(handlerOK())
+	req := httptest.NewRequest(http.MethodPost, "/cliente-service/v1/clientes", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenSuporte(t, nil))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("POST de escrita deveria ser 403, obtido %d", rec.Code)
+	}
+}
+
+func TestAutenticacao_SessaoSuporte_MetodosDeEscrita403(t *testing.T) {
+	h := Autenticacao(Config{SecretKey: secret})(handlerOK())
+	for _, metodo := range []string{http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		req := httptest.NewRequest(metodo, "/cliente-service/v1/clientes/abc", nil)
+		req.Header.Set("Authorization", "Bearer "+tokenSuporte(t, nil))
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s deveria ser 403, obtido %d", metodo, rec.Code)
+		}
+	}
+}
+
+func TestAutenticacao_SessaoNormal_PostEscritaPassa(t *testing.T) {
+	tok := gerarToken(t, jwt.MapClaims{
+		"usuarioId": "user-1",
+		"empresaId": "emp-1",
+		"exp":       time.Now().Add(time.Hour).Unix(),
+	})
+	h := Autenticacao(Config{SecretKey: secret})(handlerOK())
+	req := httptest.NewRequest(http.MethodPost, "/cliente-service/v1/clientes", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("sessão normal não pode ser bloqueada pelo gate de suporte, obtido %d", rec.Code)
+	}
+}
+
+func TestAutenticacao_SessaoSuporte_PesquisarESalvar403(t *testing.T) {
+	h := Autenticacao(Config{SecretKey: secret})(handlerOK())
+	req := httptest.NewRequest(http.MethodPost, "/cliente-service/v1/clientes/pesquisar-e-salvar", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenSuporte(t, nil))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("sufixo parcial não pode abrir escrita, obtido %d", rec.Code)
+	}
+}
+
+func TestTenantGuard_SessaoSuporte_EmpresaAlvoPassa(t *testing.T) {
+	empresa := "11111111-1111-1111-1111-111111111111"
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /empresas/{empresaId}/x", func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	})
+	cfg := Config{SecretKey: secret}
+	h := Autenticacao(cfg)(TenantGuard(cfg)(mux))
+
+	tok := tokenSuporte(t, jwt.MapClaims{
+		"empresaId":        empresa,
+		"suporteEmpresaId": empresa,
+	})
+	req := httptest.NewRequest(http.MethodGet, "/empresas/"+empresa+"/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("TenantGuard deveria aceitar empresaId do alvo, obtido %d corpo=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestAutenticacao_SessaoSuporte_PropagaClaim(t *testing.T) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !EhSessaoSuporte(r.Context()) {
+			t.Error("EhSessaoSuporte deveria ser verdadeiro")
+		}
+		id, ok := SuporteEmpresaIdDoContexto(r.Context())
+		if !ok || id.String() != "11111111-1111-1111-1111-111111111111" {
+			t.Errorf("SuporteEmpresaIdDoContexto: %v ok=%v", id, ok)
+		}
+		w.WriteHeader(http.StatusOK)
+	})
+	h := Autenticacao(Config{SecretKey: secret})(next)
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenSuporte(t, jwt.MapClaims{
+		"empresaId":        "11111111-1111-1111-1111-111111111111",
+		"suporteEmpresaId": "11111111-1111-1111-1111-111111111111",
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("esperado 200, obtido %d", rec.Code)
+	}
+}
+
 func TestTenantGuard_SemPathEmpresaId_DeixaPassar(t *testing.T) {
 	mux := http.NewServeMux()
 	chamado := false
