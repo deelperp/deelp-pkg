@@ -117,14 +117,14 @@ func extrairClaims(token *jwt.Token) Claims {
 	}
 	admin, _ := (*mc)["isPlatformAdmin"].(bool)
 	return Claims{
-		IsPlatformAdmin: admin,
-		UsuarioId:       get("usuarioId"),
-		Email:           get("email"),
-		Nome:            get("nome"),
-		Sobrenome:       get("sobrenome"),
-		EmpresaId:       get("empresaId"),
-		ColaboracaoId:   get("colaboracaoId"),
-		DepartamentoId:  get("departamentoId"),
+		IsPlatformAdmin:  admin,
+		UsuarioId:        get("usuarioId"),
+		Email:            get("email"),
+		Nome:             get("nome"),
+		Sobrenome:        get("sobrenome"),
+		EmpresaId:        get("empresaId"),
+		ColaboracaoId:    get("colaboracaoId"),
+		DepartamentoId:   get("departamentoId"),
 		CargoId:          get("cargoId"),
 		SuporteEmpresaId: get("suporteEmpresaId"),
 	}
@@ -173,9 +173,15 @@ func Autenticacao(cfg Config) func(http.Handler) http.Handler {
 				resp(w, http.StatusUnauthorized, "Token sem identificação do usuário")
 				return
 			}
-			if claims.SuporteEmpresaId != "" && !EhRequisicaoDeLeitura(r) {
-				resp(w, http.StatusForbidden, "Sessão de suporte é somente leitura")
-				return
+			if claims.SuporteEmpresaId != "" {
+				if claims.EmpresaId == "" || !strings.EqualFold(claims.SuporteEmpresaId, claims.EmpresaId) {
+					resp(w, http.StatusForbidden, "Token de suporte inválido")
+					return
+				}
+				if !EhRequisicaoDeLeitura(r) {
+					resp(w, http.StatusForbidden, "Sessão de suporte é somente leitura")
+					return
+				}
 			}
 
 			next.ServeHTTP(w, r.WithContext(ComClaims(r.Context(), claims)))

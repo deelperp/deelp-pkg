@@ -89,7 +89,6 @@ func TestEhRequisicaoDeLeitura_CaminhosReaisDeLeitura(t *testing.T) {
 		"/relatorio-service/v1/relatorios/orcamentos/abc/proposta",
 		"/relatorio-service/v1/relatorios/orcamentos-compra/abc/comparativo",
 		"/relatorio-service/v1/relatorios/ordens/abc/pdf",
-		"/relatorio-service/v1/relatorios/solicitar",
 		"/financeiro-service/v1/orcamentos-compra/gerar-pdf-solicitacao",
 		"/notificacao-service/v1/",
 	}
@@ -99,5 +98,12 @@ func TestEhRequisicaoDeLeitura_CaminhosReaisDeLeitura(t *testing.T) {
 		if !EhRequisicaoDeLeitura(req) {
 			t.Errorf("POST %s deveria ser leitura", caminho)
 		}
+	}
+}
+
+func TestEhRequisicaoDeLeitura_PostSolicitarRelatorioNaoAbre(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/relatorio-service/v1/relatorios/solicitar", nil)
+	if EhRequisicaoDeLeitura(req) {
+		t.Fatal("POST que cria job de relatório não é leitura")
 	}
 }

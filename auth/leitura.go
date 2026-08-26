@@ -24,8 +24,8 @@ func EhRequisicaoDeLeitura(r *http.Request) bool {
 				return true
 			}
 		}
-		if strings.Contains(caminho, "/relatorios/") || strings.HasSuffix(caminho, "/relatorios") {
-			return true
+		if strings.HasPrefix(caminho, "/relatorio-service/v1/relatorios/") {
+			return !strings.HasSuffix(caminho, "/solicitar")
 		}
 	}
 	return false

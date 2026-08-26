@@ -264,6 +264,20 @@ func TestAutenticacao_SessaoSuporte_PropagaClaim(t *testing.T) {
 	}
 }
 
+func TestAutenticacao_SessaoSuporte_EmpresaDivergente403(t *testing.T) {
+	h := Autenticacao(Config{SecretKey: secret})(handlerOK())
+	req := httptest.NewRequest(http.MethodGet, "/cliente-service/v1/clientes", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenSuporte(t, jwt.MapClaims{
+		"empresaId":        "emp-alvo",
+		"suporteEmpresaId": "emp-outro",
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("suporteEmpresaId divergente de empresaId deveria ser 403, obtido %d", rec.Code)
+	}
+}
+
 func TestTenantGuard_SemPathEmpresaId_DeixaPassar(t *testing.T) {
 	mux := http.NewServeMux()
 	chamado := false
