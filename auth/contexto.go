@@ -10,6 +10,7 @@ package auth
 import (
 	"context"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -40,14 +41,37 @@ type Claims struct {
 	// Emitido por autenticacao-service a partir de PLATFORM_ADMIN_EMAILS.
 	// Habilita as telas de operação da própria Deelp, que agem sobre outros
 	// tenants e por isso ficam fora do recorte por empresaId.
-	IsPlatformAdmin  bool
-	SuporteEmpresaId string
+	IsPlatformAdmin bool
+	// Recorte fino do painel: quais abas este operador opera. Ver
+	// ModulosPlataformaDisponiveis no autenticacao-service.
+	PlataformaModulos []string
+	SuporteEmpresaId  string
+	// Sessão que originou o token. O consentimento é conferido por ela, não pelo exp.
+	SessaoSuporteId string
+	// Unix do fim da elevação de escrita. Zero significa somente leitura.
+	SuporteEscritaAte int64
 }
 
 // EhPlatformAdminDoContexto informa se o token é de um operador da plataforma.
 func EhPlatformAdminDoContexto(ctx context.Context) bool {
 	c, ok := ClaimsDoContexto(ctx)
 	return ok && c.IsPlatformAdmin
+}
+
+// PodeNoModuloDePlataforma é o gate por aba do painel. Fail-closed: sem a claim
+// de operador, ou sem o módulo na lista, recusa. É o que impede que quem presta
+// suporte enxergue a receita da empresa.
+func PodeNoModuloDePlataforma(ctx context.Context, modulo string) bool {
+	c, ok := ClaimsDoContexto(ctx)
+	if !ok || !c.IsPlatformAdmin {
+		return false
+	}
+	for _, m := range c.PlataformaModulos {
+		if strings.EqualFold(strings.TrimSpace(m), modulo) {
+			return true
+		}
+	}
+	return false
 }
 
 func EhSessaoSuporte(ctx context.Context) bool {
@@ -61,6 +85,24 @@ func SuporteEmpresaIdDoContexto(ctx context.Context) (uuid.UUID, bool) {
 		return uuid.Nil, false
 	}
 	id, err := uuid.Parse(c.SuporteEmpresaId)
+	if err != nil {
+		return uuid.Nil, false
+	}
+	return id, true
+}
+
+// SuportePodeEscrever informa se a elevação de escrita ainda está na janela.
+func SuportePodeEscrever(c Claims, agora time.Time) bool {
+	return c.SuporteEscritaAte > 0 && agora.Unix() < c.SuporteEscritaAte
+}
+
+// SessaoSuporteIdDoContexto devolve a sessão de suporte que originou o token.
+func SessaoSuporteIdDoContexto(ctx context.Context) (uuid.UUID, bool) {
+	c, ok := ClaimsDoContexto(ctx)
+	if !ok || c.SessaoSuporteId == "" {
+		return uuid.Nil, false
+	}
+	id, err := uuid.Parse(c.SessaoSuporteId)
 	if err != nil {
 		return uuid.Nil, false
 	}

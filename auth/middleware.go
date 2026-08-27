@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/deelperp/deelp-pkg/seguranca"
 	"github.com/golang-jwt/jwt/v5"
@@ -116,18 +117,39 @@ func extrairClaims(token *jwt.Token) Claims {
 		return v
 	}
 	admin, _ := (*mc)["isPlatformAdmin"].(bool)
+	escritaAte, _ := (*mc)["suporteEscritaAte"].(float64)
+	modulosPlataforma := listaDeTexto((*mc)["plataformaModulos"])
 	return Claims{
-		IsPlatformAdmin:  admin,
-		UsuarioId:        get("usuarioId"),
-		Email:            get("email"),
-		Nome:             get("nome"),
-		Sobrenome:        get("sobrenome"),
-		EmpresaId:        get("empresaId"),
-		ColaboracaoId:    get("colaboracaoId"),
-		DepartamentoId:   get("departamentoId"),
-		CargoId:          get("cargoId"),
-		SuporteEmpresaId: get("suporteEmpresaId"),
+		IsPlatformAdmin:   admin,
+		UsuarioId:         get("usuarioId"),
+		Email:             get("email"),
+		Nome:              get("nome"),
+		Sobrenome:         get("sobrenome"),
+		EmpresaId:         get("empresaId"),
+		ColaboracaoId:     get("colaboracaoId"),
+		DepartamentoId:    get("departamentoId"),
+		CargoId:           get("cargoId"),
+		SuporteEmpresaId:  get("suporteEmpresaId"),
+		SessaoSuporteId:   get("sessaoSuporteId"),
+		SuporteEscritaAte: int64(escritaAte),
+		PlataformaModulos: modulosPlataforma,
 	}
+}
+
+// listaDeTexto lê um array JSON de strings da claim. Valor de outro formato
+// devolve lista vazia — fail-closed, porque a lista é o que abre rota.
+func listaDeTexto(bruto any) []string {
+	itens, ok := bruto.([]any)
+	if !ok {
+		return nil
+	}
+	lista := make([]string, 0, len(itens))
+	for _, item := range itens {
+		if texto, ok := item.(string); ok && texto != "" {
+			lista = append(lista, texto)
+		}
+	}
+	return lista
 }
 
 // Autenticacao valida o JWT do header Authorization (Bearer ...), injeta as
@@ -178,7 +200,14 @@ func Autenticacao(cfg Config) func(http.Handler) http.Handler {
 					resp(w, http.StatusForbidden, "Token de suporte inválido")
 					return
 				}
-				if !EhRequisicaoDeLeitura(r) {
+				// Sem a sessão de origem não há como conferir o consentimento.
+				if claims.SessaoSuporteId == "" {
+					resp(w, http.StatusForbidden, "Token de suporte sem sessão de origem")
+					return
+				}
+				// A escrita só passa dentro da janela de elevação. O escopo por
+				// módulo é conferido depois, no RBAC, contra a sessão no banco.
+				if !EhRequisicaoDeLeitura(r) && !SuportePodeEscrever(claims, time.Now()) {
 					resp(w, http.StatusForbidden, "Sessão de suporte é somente leitura")
 					return
 				}

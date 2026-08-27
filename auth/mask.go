@@ -9,8 +9,9 @@ import "strings"
 // antes do mascaramento.
 //
 // Exemplo:
-//   MascararToken("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xxx.yyy")
-//   -> "eyJhbG…(123)…yyy"
+//
+//	MascararToken("Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.xxx.yyy")
+//	-> "eyJhbG…(123)…yyy"
 //
 // Sempre prefira esta função a logar o token cru.
 func MascararToken(token string) string {

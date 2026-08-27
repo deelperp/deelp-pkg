@@ -83,12 +83,8 @@ func TestEhRequisicaoDeLeitura_CaminhosReaisDeLeitura(t *testing.T) {
 		"/financeiro-service/v1/dashboard/metricas",
 		"/financeiro-service/v1/dashboard/metricas-integradas",
 		"/nfe-service/v1/nfe/previa-calculo",
-		"/relatorio-service/v1/relatorios/vendas",
-		"/relatorio-service/v1/relatorios/nfe/danfe",
-		"/relatorio-service/v1/relatorios/mdfe/damdfe",
-		"/relatorio-service/v1/relatorios/orcamentos/abc/proposta",
-		"/relatorio-service/v1/relatorios/orcamentos-compra/abc/comparativo",
-		"/relatorio-service/v1/relatorios/ordens/abc/pdf",
+		"/ordem-service/v1/pedidos/grade/pesquisar",
+		"/roadmap-service/v1/funcionalidades/listar",
 		"/financeiro-service/v1/orcamentos-compra/gerar-pdf-solicitacao",
 		"/notificacao-service/v1/",
 	}
@@ -97,6 +93,24 @@ func TestEhRequisicaoDeLeitura_CaminhosReaisDeLeitura(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, caminho, nil)
 		if !EhRequisicaoDeLeitura(req) {
 			t.Errorf("POST %s deveria ser leitura", caminho)
+		}
+	}
+}
+
+// Sufixo genérico adota sozinho a próxima rota que alguém criar. Estes saíram
+// da allowlist justamente por isso, e por não casarem com rota nenhuma.
+func TestEhRequisicaoDeLeitura_SufixosGenericosNaoAbrem(t *testing.T) {
+	caminhos := []string{
+		"/ordem-service/v1/ordens/abc/pdf",
+		"/financeiro-service/v1/orcamentos-compra/abc/comparativo",
+		"/nfe-service/v1/nfe/abc/danfe",
+		"/mdfe-service/v1/mdfe/abc/damdfe",
+		"/financeiro-service/v1/orcamentos/abc/proposta",
+	}
+	for _, caminho := range caminhos {
+		req := httptest.NewRequest(http.MethodPost, caminho, nil)
+		if EhRequisicaoDeLeitura(req) {
+			t.Errorf("POST %s não pode entrar na allowlist por sufixo genérico", caminho)
 		}
 	}
 }

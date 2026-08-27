@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -136,6 +137,7 @@ func tokenSuporte(t *testing.T, extra jwt.MapClaims) string {
 		"email":            "op@deelp.com",
 		"empresaId":        "emp-alvo",
 		"suporteEmpresaId": "emp-alvo",
+		"sessaoSuporteId":  "22222222-2222-2222-2222-222222222222",
 		"cargoId":          "cargo-titular",
 		"exp":              time.Now().Add(time.Hour).Unix(),
 	}
@@ -261,6 +263,25 @@ func TestAutenticacao_SessaoSuporte_PropagaClaim(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("esperado 200, obtido %d", rec.Code)
+	}
+}
+
+// Token de suporte sem sessão de origem não permite conferir o consentimento.
+// Recusar força o operador a reentrar pelo painel.
+func TestAutenticacao_SessaoSuporte_SemSessaoDeOrigem403(t *testing.T) {
+	h := Autenticacao(Config{SecretKey: secret})(handlerOK())
+	tok := gerarToken(t, jwt.MapClaims{
+		"usuarioId":        "op-1",
+		"empresaId":        "emp-alvo",
+		"suporteEmpresaId": "emp-alvo",
+		"exp":              time.Now().Add(time.Hour).Unix(),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/cliente-service/v1/clientes/abc", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("token de suporte sem sessaoSuporteId deveria ser 403, obtido %d", rec.Code)
 	}
 }
 
@@ -487,5 +508,121 @@ func TestResponder_Customizado_EhUsado(t *testing.T) {
 	h.ServeHTTP(rec, req)
 	if chamou != 1 {
 		t.Fatalf("responder customizado não foi chamado: %d", chamou)
+	}
+}
+
+func TestAutenticacao_SessaoSuporte_SemElevacaoEscritaContinua403(t *testing.T) {
+	h := Autenticacao(Config{SecretKey: secret})(handlerOK())
+	req := httptest.NewRequest(http.MethodPost, "/cliente-service/v1/clientes", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenSuporte(t, nil))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("escrita sem elevação deveria ser 403, obtido %d", rec.Code)
+	}
+}
+
+func TestAutenticacao_SessaoSuporte_ComElevacaoEscritaPassa(t *testing.T) {
+	h := Autenticacao(Config{SecretKey: secret})(handlerOK())
+	req := httptest.NewRequest(http.MethodPost, "/cliente-service/v1/clientes", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenSuporte(t, jwt.MapClaims{
+		"suporteEscritaAte": time.Now().Add(10 * time.Minute).Unix(),
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("escrita dentro da janela de elevação deveria passar, obtido %d", rec.Code)
+	}
+}
+
+func TestAutenticacao_SessaoSuporte_ElevacaoVencidaNaoPassa(t *testing.T) {
+	h := Autenticacao(Config{SecretKey: secret})(handlerOK())
+	req := httptest.NewRequest(http.MethodDelete, "/cliente-service/v1/clientes/abc", nil)
+	req.Header.Set("Authorization", "Bearer "+tokenSuporte(t, jwt.MapClaims{
+		"suporteEscritaAte": time.Now().Add(-time.Minute).Unix(),
+	}))
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("elevação vencida deveria ser 403, obtido %d", rec.Code)
+	}
+}
+
+func TestPodeNoModuloDePlataforma(t *testing.T) {
+	comClaims := func(admin bool, modulos ...string) context.Context {
+		return ComClaims(context.Background(), Claims{
+			UsuarioId:         "op-1",
+			IsPlatformAdmin:   admin,
+			PlataformaModulos: modulos,
+		})
+	}
+
+	casos := []struct {
+		nome     string
+		ctx      context.Context
+		modulo   string
+		esperado bool
+	}{
+		{"operador com o módulo", comClaims(true, "contas", "suporte"), "contas", true},
+		{"operador sem o módulo", comClaims(true, "contas", "suporte"), "financeiro", false},
+		{"operador sem módulo nenhum", comClaims(true), "contas", false},
+		{"usuário comum com módulo na claim", comClaims(false, "financeiro"), "financeiro", false},
+		{"sem claims no contexto", context.Background(), "contas", false},
+		{"caixa e espaço não mudam a resposta", comClaims(true, " Financeiro "), "financeiro", true},
+	}
+
+	for _, caso := range casos {
+		t.Run(caso.nome, func(t *testing.T) {
+			if got := PodeNoModuloDePlataforma(caso.ctx, caso.modulo); got != caso.esperado {
+				t.Fatalf("esperado %v, obtido %v", caso.esperado, got)
+			}
+		})
+	}
+}
+
+// A lista chega do JSON como []any. Formato inesperado não pode abrir rota.
+func TestAutenticacao_PlataformaModulos_FormatoInvalidoNaoAbre(t *testing.T) {
+	var capturado Claims
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturado, _ = ClaimsDoContexto(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+	h := Autenticacao(Config{SecretKey: secret})(next)
+
+	tok := gerarToken(t, jwt.MapClaims{
+		"usuarioId":         "op-1",
+		"isPlatformAdmin":   true,
+		"plataformaModulos": "financeiro",
+		"exp":               time.Now().Add(time.Hour).Unix(),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if len(capturado.PlataformaModulos) != 0 {
+		t.Fatalf("claim em formato inesperado não pode virar módulo: %v", capturado.PlataformaModulos)
+	}
+}
+
+func TestAutenticacao_PlataformaModulos_PropagaLista(t *testing.T) {
+	var capturado Claims
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		capturado, _ = ClaimsDoContexto(r.Context())
+		w.WriteHeader(http.StatusOK)
+	})
+	h := Autenticacao(Config{SecretKey: secret})(next)
+
+	tok := gerarToken(t, jwt.MapClaims{
+		"usuarioId":         "op-1",
+		"isPlatformAdmin":   true,
+		"plataformaModulos": []string{"contas", "suporte"},
+		"exp":               time.Now().Add(time.Hour).Unix(),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.Header.Set("Authorization", "Bearer "+tok)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if len(capturado.PlataformaModulos) != 2 {
+		t.Fatalf("esperado 2 módulos, obtido %v", capturado.PlataformaModulos)
 	}
 }

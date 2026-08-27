@@ -31,6 +31,8 @@ func EhRequisicaoDeLeitura(r *http.Request) bool {
 	return false
 }
 
+// Cada sufixo corresponde a rotas reais e verificadas. Sufixo genérico não
+// entra: adotaria sozinho a próxima rota que alguém criar.
 var sufixosDeLeitura = []string{
 	"/pesquisar",
 	"/consultar",
@@ -38,12 +40,7 @@ var sufixosDeLeitura = []string{
 	"/metricas",
 	"/metricas-integradas",
 	"/previa-calculo",
-	"/danfe",
-	"/damdfe",
-	"/proposta",
-	"/comparativo",
 	"/gerar-pdf-solicitacao",
-	"/pdf",
 }
 
 var caminhosDeLeitura = []string{
