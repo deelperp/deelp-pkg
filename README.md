@@ -47,7 +47,7 @@ sobre `deelp-pkg` enquanto desenvolve em um serviço, use Go workspace:
 ```bash
 # uma única vez, na pasta-pai que contém todos os clones:
 cat > go.work <<'EOF'
-go 1.26.3
+go 1.27.1
 use (
     ./deelp-pkg
     ./ordem-service
@@ -83,7 +83,7 @@ Exemplo no GitHub Actions:
 - name: Setup Go
   uses: actions/setup-go@v5
   with:
-    go-version: '1.26.3'
+    go-version: '1.27.1'
     cache: true
 - name: Configure private modules
   env:
@@ -96,7 +96,7 @@ Exemplo no GitHub Actions:
 No Dockerfile:
 
 ```dockerfile
-FROM golang:1.26.3 AS builder
+FROM golang:1.27.1 AS builder
 ARG GH_PAT
 WORKDIR /app
 RUN git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"
