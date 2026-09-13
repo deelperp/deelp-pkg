@@ -17,6 +17,7 @@ deelp-pkg/
 ├── mongodb/          import "github.com/deelperp/deelp-pkg/mongodb"
 ├── observabilidade/  import "github.com/deelperp/deelp-pkg/observabilidade"
 ├── postgres/         import "github.com/deelperp/deelp-pkg/postgres"
+├── resposta/         import "github.com/deelperp/deelp-pkg/resposta"
 ├── s3/               import "github.com/deelperp/deelp-pkg/s3"
 └── seguranca/        import "github.com/deelperp/deelp-pkg/seguranca"
 ```
@@ -36,8 +37,24 @@ versionamento individual e funciona bem para o time pequeno do Deelp.
 | `mongodb` | Cliente Mongo + pool tuning + URI ou Host/Port |
 | `observabilidade` | OpenTelemetry (traces + metrics + W3C propagator) |
 | `postgres` | Cliente Postgres + pool tuning + SSLMode |
+| `resposta` | Envelope JSON canônico `{sucesso, mensagem, conteudo}` e writers HTTP (`EscreverErro`, `EscreverResultado`, `EmpresaIdDoToken`) |
 | `s3` | Cliente AWS S3 (upload/download/presigned/CORS) |
 | `seguranca` | Rate limiter (Redis-backed), IPBlocker, SecurityAudit, IPDoRequest |
+
+Handlers HTTP reusam `resposta` na fronteira:
+
+```go
+empresaId, ok := resposta.EmpresaIdDoToken(w, r)
+if !ok {
+    return
+}
+resposta.EscreverErro(w, http.StatusBadRequest, "Corpo inválido")
+resposta.EscreverSucesso(w, conteudo)
+resposta.EscreverResultado(w, res.Sucesso, res.Mensagem, res.Conteudo)
+resposta.EscreverSaida(w, res.Sucesso, res)
+resposta.EscreverCriado(w, res.Sucesso, res)
+auth.Config{Responder: resposta.EscreverErro}
+```
 
 ## Desenvolvimento local
 

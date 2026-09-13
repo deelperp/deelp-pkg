@@ -1,6 +1,7 @@
 package consumo
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -74,5 +75,24 @@ func TestIntervalo_ViradaDeAno(t *testing.T) {
 func TestIntervalo_CompetenciaInvalida(t *testing.T) {
 	if _, _, err := Competencia("lixo").Intervalo(); err == nil {
 		t.Error("esperado erro para competência inválida")
+	}
+}
+
+func TestFaixasRFC3339_IncluiLocalEUTC(t *testing.T) {
+	inicio, fim, err := Competencia("2026-09").Intervalo()
+	if err != nil {
+		t.Fatalf("intervalo: %v", err)
+	}
+
+	localIni, localFim, utcIni, utcFim := FaixasRFC3339(inicio, fim)
+
+	if localIni != inicio.Format(time.RFC3339) || localFim != fim.Format(time.RFC3339) {
+		t.Errorf("faixa local = [%s, %s)", localIni, localFim)
+	}
+	if utcIni != inicio.UTC().Format(time.RFC3339) || utcFim != fim.UTC().Format(time.RFC3339) {
+		t.Errorf("faixa utc = [%s, %s)", utcIni, utcFim)
+	}
+	if !strings.HasPrefix(localIni, "2026-09-01T") || !strings.HasPrefix(utcIni, "2026-09-01T") {
+		t.Errorf("inícios deveriam cair em 1º de setembro: local=%s utc=%s", localIni, utcIni)
 	}
 }

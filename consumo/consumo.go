@@ -45,6 +45,19 @@ func (c Competencia) Intervalo() (inicio, fim time.Time, err error) {
 	return inicio, fim, nil
 }
 
+// FaixasRFC3339 devolve o intervalo em string nos dois offsets que o Mongo
+// encontra quando autorizadoEm foi gravado com Format(RFC3339).
+//
+// Range lexicográfico só casa quando o bound usa o MESMO offset do valor
+// persistido: "2026-09-13T11:56:00Z" não compara com
+// "2026-10-01T00:00:00-03:00" da forma que um instante compara. O filtro a
+// jusante aplica as duas faixas (local e UTC) e, quando o campo é Date, a
+// comparação nativa de time.Time.
+func FaixasRFC3339(inicio, fim time.Time) (localIni, localFim, utcIni, utcFim string) {
+	return inicio.Format(time.RFC3339), fim.Format(time.RFC3339),
+		inicio.UTC().Format(time.RFC3339), fim.UTC().Format(time.RFC3339)
+}
+
 // RespostaContagem é o corpo devolvido pelas rotas internas de contagem.
 type RespostaContagem struct {
 	Quantidade int64 `json:"quantidade"`
