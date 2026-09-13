@@ -20,7 +20,7 @@ import (
 //
 // Sem cache, CADA requisição protegida de CADA serviço fazia uma ida e volta
 // HTTP ao autenticacao-service. Carregar uma tela com várias chamadas
-// protegidas gerava dezenas de consultas, estourava o rate limiter (100
+// protegidas gerava dezenas de consultas, estourava o rate limiter (400
 // req/min por IP, compartilhado com /entrar) e derrubava o próprio login.
 //
 // 2 minutos é curto o bastante para uma revogação de permissão surtir efeito
