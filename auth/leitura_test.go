@@ -83,6 +83,7 @@ func TestEhRequisicaoDeLeitura_CaminhosReaisDeLeitura(t *testing.T) {
 		"/financeiro-service/v1/dashboard/metricas",
 		"/financeiro-service/v1/dashboard/metricas-integradas",
 		"/nfe-service/v1/nfe/previa-calculo",
+		"/nfse-service/v1/nfse/previa-calculo",
 		"/ordem-service/v1/pedidos/grade/pesquisar",
 		"/roadmap-service/v1/funcionalidades/listar",
 		"/financeiro-service/v1/orcamentos-compra/gerar-pdf-solicitacao",
