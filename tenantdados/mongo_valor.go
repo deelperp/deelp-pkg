@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 )
 
@@ -24,4 +25,23 @@ func valorMongoSimples(v any) any {
 		return t.String()
 	}
 	return v
+}
+
+// IdentidadesUUID cobre as quatro formas em que o UUID já foi gravado nos
+// serviços Mongo (UUID nativo, texto e binário subtipos 4 e 0). Filtrar por uma
+// só deixaria documentos antigos fora da exportação e do expurgo.
+func IdentidadesUUID(id uuid.UUID) bson.A {
+	return bson.A{
+		id,
+		id.String(),
+		primitive.Binary{Subtype: 0x04, Data: append([]byte(nil), id[:]...)},
+		primitive.Binary{Subtype: 0x00, Data: append([]byte(nil), id[:]...)},
+	}
+}
+
+// FiltroPorCampo é o filtro mais comum: campo de tenant em qualquer das formas.
+func FiltroPorCampo(campo string) func(uuid.UUID) bson.M {
+	return func(id uuid.UUID) bson.M {
+		return bson.M{campo: bson.M{"$in": IdentidadesUUID(id)}}
+	}
 }

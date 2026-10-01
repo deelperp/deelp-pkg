@@ -19,12 +19,25 @@ type ColecaoMongo struct {
 	FaseExpurgo    int
 	Retida         bool
 	MotivoRetencao string
+	// Rotulo distingue recortes da mesma coleção (ex.: rascunho e oficial)
+	// no relatório e no nome do arquivo exportado.
+	Rotulo string
+	// NaoExportar evita repetir no ZIP um recorte que outro já exporta.
+	NaoExportar bool
 }
 
-func (c ColecaoMongo) Nome() string { return "mongo." + c.Colecao }
+func (c ColecaoMongo) Nome() string {
+	if c.Rotulo != "" {
+		return "mongo." + c.Colecao + "." + c.Rotulo
+	}
+	return "mongo." + c.Colecao
+}
 func (c ColecaoMongo) Fase() int    { return c.FaseExpurgo }
 
 func (c ColecaoMongo) Exportar(ctx context.Context, empresaID uuid.UUID) ([]Arquivo, error) {
+	if c.NaoExportar {
+		return nil, nil
+	}
 	cursor, err := c.DB.Collection(c.Colecao).Find(ctx, c.Filtro(empresaID))
 	if err != nil {
 		return nil, err

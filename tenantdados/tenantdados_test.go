@@ -139,3 +139,44 @@ func TestHandlerExpurgo_PadraoEhSimular(t *testing.T) {
 		t.Fatalf("sem simular=false nada pode ser apagado: %v %v", err, *apagadas)
 	}
 }
+
+type s3Falso struct {
+	objetos map[string][]byte
+}
+
+func (s *s3Falso) ListarPrefixo(_ context.Context, prefixo string) ([]string, error) {
+	var chaves []string
+	for k := range s.objetos {
+		if strings.HasPrefix(k, prefixo) {
+			chaves = append(chaves, k)
+		}
+	}
+	return chaves, nil
+}
+func (s *s3Falso) Download(_ context.Context, k string) ([]byte, error) { return s.objetos[k], nil }
+func (s *s3Falso) Excluir(_ context.Context, k string) error {
+	delete(s.objetos, k)
+	return nil
+}
+
+func TestPrefixoS3_NaoVazaParaEmpresaComPrefixoParecido(t *testing.T) {
+	empresa := uuid.MustParse("00000000-0000-0000-0000-000000000001")
+	outra := "documentos/empresa/" + empresa.String() + "0/x.pdf"
+	s3 := &s3Falso{objetos: map[string][]byte{
+		"documentos/empresa/" + empresa.String() + "/a.pdf": []byte("a"),
+		outra: []byte("b"),
+	}}
+	fonte := PrefixoS3{S3: s3, NomeFonte: "s3", PastaExportada: "anexos",
+		Prefixo: func(id uuid.UUID) string { return "documentos/empresa/" + id.String() }}
+
+	arquivos, err := fonte.Exportar(context.Background(), empresa)
+	if err != nil || len(arquivos) != 1 || arquivos[0].Nome != "anexos/a.pdf" {
+		t.Fatalf("exportação: %v %+v", err, arquivos)
+	}
+	if _, err := fonte.Apagar(context.Background(), empresa); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := s3.objetos[outra]; !ok || len(s3.objetos) != 1 {
+		t.Fatalf("apagou objeto de outro tenant: %v", s3.objetos)
+	}
+}
