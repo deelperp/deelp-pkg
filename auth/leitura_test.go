@@ -76,7 +76,7 @@ func TestEhRequisicaoDeLeitura_CaminhosReaisDeLeitura(t *testing.T) {
 		"/estoque-service/v1/cest/consultar",
 		"/estoque-service/v1/cst/consultar",
 		"/estoque-service/v1/cclasstrib/consultar",
-		"/financeiro-service/v1/modelos-fiscais/consultar",
+		"/cliente-service/v1/modelos-fiscais/consultar",
 		"/nfe-service/v1/nfe/listar",
 		"/mdfe-service/v1/mdfe/listar",
 		"/tarefa-service/v1/tarefas/listar",
