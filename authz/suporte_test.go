@@ -74,7 +74,7 @@ func TestPermissaoRemota_SuporteRevalidaNaProximaRequisicao(t *testing.T) {
 			if chamadas.Load() != 2 || execucoes != 1 {
 				t.Fatalf("consultas=%d, execuções=%d; esperado 2 consultas e 1 execução", chamadas.Load(), execucoes)
 			}
-			if len(checker.cache) != 0 {
+			if checker.cache.Len() != 0 {
 				t.Fatal("permissões de suporte não devem ser gravadas no cache")
 			}
 		})
@@ -87,7 +87,7 @@ func TestTemPermissao_SuporteIgnoraEntradaJaCacheada(t *testing.T) {
 	}))
 	defer servidor.Close()
 	checker := NewHTTPChecker(servidor.URL)
-	checker.guardar(chaveCache("operador", "Bearer suporte"), map[string][]string{"cadastros": {"atualizar"}})
+	checker.guardar(chaveCache("operador", "Bearer suporte"), "operador", map[string][]string{"cadastros": {"atualizar"}})
 	ctx := auth.ComClaims(context.Background(), auth.Claims{
 		UsuarioId: "operador", EmpresaId: "empresa", SuporteEmpresaId: "empresa", SessaoSuporteId: "sessao",
 	})

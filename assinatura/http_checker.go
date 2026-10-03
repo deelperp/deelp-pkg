@@ -6,8 +6,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"sync"
 	"time"
+
+	"github.com/deelperp/deelp-pkg/internal/ttlcache"
 )
 
 // TTLCache é quanto tempo a situação do contrato fica válida em memória.
@@ -22,10 +23,12 @@ const TTLCache = 2 * time.Minute
 // acabou de contratar tomando 402 depois de ver "plano ativado" na tela.
 const TTLCacheBloqueado = 10 * time.Second
 
+// CapacidadeCache limita quantas empresas ficam em memória por processo.
+const CapacidadeCache = 10_000
+
 type entradaCache struct {
-	ativo    bool
-	motivo   string
-	expiraEm time.Time
+	ativo  bool
+	motivo string
 }
 
 // HTTPChecker consulta a situação do contrato no cliente-service repassando o
@@ -35,18 +38,18 @@ type HTTPChecker struct {
 	baseURL    string
 	httpClient *http.Client
 
-	mu    sync.RWMutex
-	cache map[string]entradaCache
+	cache *ttlcache.Cache[string, entradaCache]
 	agora func() time.Time
 }
 
 func NewHTTPChecker(baseURL string) *HTTPChecker {
-	return &HTTPChecker{
+	c := &HTTPChecker{
 		baseURL:    baseURL,
 		httpClient: &http.Client{Timeout: 5 * time.Second},
-		cache:      map[string]entradaCache{},
 		agora:      time.Now,
 	}
+	c.cache = ttlcache.New[string, entradaCache](CapacidadeCache, func() time.Time { return c.agora() })
+	return c
 }
 
 func (c *HTTPChecker) ContratoAtivo(ctx context.Context, bearer, empresaId string) (bool, string, error) {
@@ -54,38 +57,21 @@ func (c *HTTPChecker) ContratoAtivo(ctx context.Context, bearer, empresaId strin
 		return false, "", fmt.Errorf("assinatura: checker não configurado")
 	}
 
-	if entrada, ok := c.doCache(empresaId); ok {
-		return entrada.ativo, entrada.motivo, nil
-	}
-
-	ativo, motivo, err := c.consultar(ctx, bearer)
+	entrada, err := c.cache.Load(ctx, empresaId, func(ctx context.Context) (entradaCache, time.Duration, error) {
+		ativo, motivo, err := c.consultar(ctx, bearer)
+		if err != nil {
+			return entradaCache{}, 0, err
+		}
+		ttl := TTLCache
+		if !ativo {
+			ttl = TTLCacheBloqueado
+		}
+		return entradaCache{ativo: ativo, motivo: motivo}, ttl, nil
+	})
 	if err != nil {
 		return false, "", err
 	}
-
-	ttl := TTLCache
-	if !ativo {
-		ttl = TTLCacheBloqueado
-	}
-
-	c.guardar(empresaId, entradaCache{ativo: ativo, motivo: motivo, expiraEm: c.agora().Add(ttl)})
-	return ativo, motivo, nil
-}
-
-func (c *HTTPChecker) doCache(empresaId string) (entradaCache, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	entrada, ok := c.cache[empresaId]
-	if !ok || c.agora().After(entrada.expiraEm) {
-		return entradaCache{}, false
-	}
-	return entrada, true
-}
-
-func (c *HTTPChecker) guardar(empresaId string, entrada entradaCache) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.cache[empresaId] = entrada
+	return entrada.ativo, entrada.motivo, nil
 }
 
 func (c *HTTPChecker) consultar(ctx context.Context, bearer string) (bool, string, error) {
@@ -131,7 +117,5 @@ func (c *HTTPChecker) consultar(ctx context.Context, bearer string) (bool, strin
 // Invalidar descarta a entrada em cache do tenant. Usado quando o próprio
 // processo sabe que a situação mudou (ex.: contrato recém-ativado).
 func (c *HTTPChecker) Invalidar(empresaId string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.cache, empresaId)
+	c.cache.Delete(empresaId)
 }

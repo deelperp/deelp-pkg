@@ -6,15 +6,17 @@ package authz
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/deelperp/deelp-pkg/auth"
+	"github.com/deelperp/deelp-pkg/internal/ttlcache"
 )
 
 // TTLCache é por quanto tempo o mapa de permissões do usuário fica válido em
@@ -30,62 +32,48 @@ import (
 // uma consulta só.
 const TTLCache = 2 * time.Minute
 
-type entradaCache struct {
+// CapacidadeCache limita quantos pares usuário×token ficam em memória. Cada
+// login gera um token novo; sem teto, um processo longevo acumula entradas.
+const CapacidadeCache = 10_000
+
+type permissoesEmCache struct {
+	usuarioId  string
 	permissoes map[string][]string
-	expiraEm   time.Time
 }
 
 type HTTPChecker struct {
 	baseURL string
 	http    *http.Client
 
-	mu    sync.RWMutex
-	cache map[string]entradaCache
+	cache *ttlcache.Cache[string, permissoesEmCache]
 	agora func() time.Time
 }
 
 // NewHTTPChecker cria o verificador. baseURL é a URL base do
 // autenticacao-service (env AUTENTICACAO_SERVICE_URL).
 func NewHTTPChecker(baseURL string) *HTTPChecker {
-	return &HTTPChecker{
+	c := &HTTPChecker{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
 		http:    &http.Client{Timeout: 10 * time.Second},
-		cache:   map[string]entradaCache{},
 		agora:   time.Now,
 	}
-}
-
-func (c *HTTPChecker) doCache(chave string) (map[string][]string, bool) {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	entrada, ok := c.cache[chave]
-	if !ok || c.agora().After(entrada.expiraEm) {
-		return nil, false
-	}
-	return entrada.permissoes, true
-}
-
-func (c *HTTPChecker) guardar(chave string, permissoes map[string][]string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.cache[chave] = entradaCache{permissoes: permissoes, expiraEm: c.agora().Add(TTLCache)}
+	c.cache = ttlcache.New[string, permissoesEmCache](CapacidadeCache, func() time.Time { return c.agora() })
+	return c
 }
 
 func chaveCache(usuarioId, bearer string) string {
-	return usuarioId + "\x00" + bearer
+	soma := sha256.Sum256([]byte(usuarioId + "\x00" + bearer))
+	return hex.EncodeToString(soma[:])
+}
+
+func (c *HTTPChecker) guardar(chave, usuarioId string, permissoes map[string][]string) {
+	c.cache.Set(chave, permissoesEmCache{usuarioId: usuarioId, permissoes: permissoes}, TTLCache)
 }
 
 // Invalidar descarta as permissões em cache do usuário. Usar quando o próprio
 // processo sabe que o cargo mudou.
 func (c *HTTPChecker) Invalidar(usuarioId string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	prefixo := usuarioId + "\x00"
-	for k := range c.cache {
-		if k == usuarioId || strings.HasPrefix(k, prefixo) {
-			delete(c.cache, k)
-		}
-	}
+	c.cache.DeleteFunc(func(_ string, v permissoesEmCache) bool { return v.usuarioId == usuarioId })
 }
 
 func contem(acoes []string, acao string) bool {
@@ -105,16 +93,33 @@ func (c *HTTPChecker) TemPermissao(ctx context.Context, bearer, usuarioId, modul
 	if c.baseURL == "" {
 		return false, fmt.Errorf("AUTENTICACAO_SERVICE_URL não configurada")
 	}
-	usarCache := !auth.EhSessaoSuporte(ctx)
-	if usarCache {
-		if permissoes, ok := c.doCache(chaveCache(usuarioId, bearer)); ok {
-			return contem(permissoes[modulo], acao), nil
+	if auth.EhSessaoSuporte(ctx) {
+		permissoes, _, err := c.consultar(ctx, bearer, usuarioId)
+		if err != nil {
+			return false, err
 		}
+		return contem(permissoes[modulo], acao), nil
 	}
+	encontrado, err := c.cache.Load(ctx, chaveCache(usuarioId, bearer), func(ctx context.Context) (permissoesEmCache, time.Duration, error) {
+		permissoes, sucesso, err := c.consultar(ctx, bearer, usuarioId)
+		if err != nil || !sucesso {
+			// Resposta sem sucesso não é cacheada: pode ser estado transitório, e
+			// gravar "sem permissão" por 2 minutos negaria acesso legítimo.
+			return permissoesEmCache{}, 0, err
+		}
+		return permissoesEmCache{usuarioId: usuarioId, permissoes: permissoes}, TTLCache, nil
+	})
+	if err != nil {
+		return false, err
+	}
+	return contem(encontrado.permissoes[modulo], acao), nil
+}
+
+func (c *HTTPChecker) consultar(ctx context.Context, bearer, usuarioId string) (map[string][]string, bool, error) {
 	url := fmt.Sprintf("%s/autenticacao-service/v1/usuarios/%s/permissoes", c.baseURL, usuarioId)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 	if bearer != "" {
 		if strings.HasPrefix(strings.ToLower(bearer), "bearer ") {
@@ -125,31 +130,25 @@ func (c *HTTPChecker) TemPermissao(ctx context.Context, bearer, usuarioId, modul
 	}
 	resp, err := c.http.Do(req)
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return false, err
+		return nil, false, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return false, fmt.Errorf("autenticacao-service permissoes: status %d: %s", resp.StatusCode, string(body))
+		return nil, false, fmt.Errorf("autenticacao-service permissoes: status %d", resp.StatusCode)
 	}
 	var parsed struct {
 		Sucesso  bool                `json:"sucesso"`
 		Conteudo map[string][]string `json:"conteudo"`
 	}
 	if err := json.Unmarshal(body, &parsed); err != nil {
-		return false, fmt.Errorf("resposta inválida do autenticacao-service: %w", err)
+		return nil, false, fmt.Errorf("resposta inválida do autenticacao-service: %w", err)
 	}
 	if !parsed.Sucesso {
-		// Resposta sem sucesso não é cacheada: pode ser estado transitório, e
-		// gravar "sem permissão" por 2 minutos negaria acesso legítimo.
-		return false, nil
+		return nil, false, nil
 	}
-
-	if usarCache {
-		c.guardar(chaveCache(usuarioId, bearer), parsed.Conteudo)
-	}
-	return contem(parsed.Conteudo[modulo], acao), nil
+	return parsed.Conteudo, true, nil
 }
