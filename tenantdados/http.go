@@ -89,3 +89,20 @@ func (s Servico) HandlerExpurgo(v *internalauth.Verificador) http.HandlerFunc {
 		_ = json.NewEncoder(w).Encode(map[string]any{"sucesso": true, "conteudo": relatorio})
 	}
 }
+
+// Envolver atende as duas rotas internas antes do roteador do serviço, que
+// costuma exigir JWT em tudo que não reconhece como público.
+func (s Servico) Envolver(prefixo string, v *internalauth.Verificador, proximo http.Handler) http.Handler {
+	exportacao := s.HandlerExportacao(v)
+	expurgo := s.HandlerExpurgo(v)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == prefixo+CaminhoExportacao:
+			exportacao(w, r)
+		case r.Method == http.MethodPost && r.URL.Path == prefixo+CaminhoExpurgo:
+			expurgo(w, r)
+		default:
+			proximo.ServeHTTP(w, r)
+		}
+	})
+}

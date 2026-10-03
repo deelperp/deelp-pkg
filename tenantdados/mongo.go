@@ -24,6 +24,9 @@ type ColecaoMongo struct {
 	Rotulo string
 	// NaoExportar evita repetir no ZIP um recorte que outro já exporta.
 	NaoExportar bool
+	// SomenteExportar entra no ZIP e fica fora do expurgo (outros recortes da
+	// mesma coleção decidem o que sai).
+	SomenteExportar bool
 }
 
 func (c ColecaoMongo) Nome() string {
@@ -32,7 +35,12 @@ func (c ColecaoMongo) Nome() string {
 	}
 	return "mongo." + c.Colecao
 }
-func (c ColecaoMongo) Fase() int    { return c.FaseExpurgo }
+func (c ColecaoMongo) Fase() int {
+	if c.SomenteExportar {
+		return 0
+	}
+	return c.FaseExpurgo
+}
 
 func (c ColecaoMongo) Exportar(ctx context.Context, empresaID uuid.UUID) ([]Arquivo, error) {
 	if c.NaoExportar {

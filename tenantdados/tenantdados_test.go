@@ -180,3 +180,23 @@ func TestPrefixoS3_NaoVazaParaEmpresaComPrefixoParecido(t *testing.T) {
 		t.Fatalf("apagou objeto de outro tenant: %v", s3.objetos)
 	}
 }
+
+func TestEnvolver_InterceptaSoAsRotasInternas(t *testing.T) {
+	var apagadas []string
+	s := Servico{Nome: "x", Fontes: []Fonte{fonte("a", FaseMovimento, &apagadas, nil)}}
+	proximoChamado := false
+	h := s.Envolver("/x/v1", internalauth.NewVerificador("chave"), http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proximoChamado = true
+	}))
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	if _, err := NovoCliente("x", srv.URL, "/x/v1", "chave").Exportar(context.Background(), uuid.New()); err != nil || proximoChamado {
+		t.Fatalf("exportação deve ser atendida pelo wrapper: %v", err)
+	}
+	resp, _ := http.Get(srv.URL + "/x/v1/outra")
+	resp.Body.Close()
+	if !proximoChamado {
+		t.Fatal("outras rotas seguem para o roteador do serviço")
+	}
+}

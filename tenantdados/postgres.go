@@ -24,6 +24,10 @@ type TabelaPG struct {
 	Retida         bool
 	MotivoRetencao string
 	Anonimizar     string
+	// Colunas restringe a exportação (padrão "*"): tabela com segredo, como
+	// hash de senha, não pode sair inteira.
+	Colunas     string
+	NaoExportar bool
 	// Opcional tolera tabela ausente no banco (criada fora dos scripts de
 	// estrutura): conta zero em vez de derrubar o expurgo inteiro.
 	Opcional bool
@@ -38,7 +42,14 @@ func (t TabelaPG) Nome() string { return t.Tabela }
 func (t TabelaPG) Fase() int    { return t.FaseExpurgo }
 
 func (t TabelaPG) Exportar(ctx context.Context, empresaID uuid.UUID) ([]Arquivo, error) {
-	rows, err := t.DB.QueryContext(ctx, fmt.Sprintf("SELECT * FROM %s WHERE %s", t.Tabela, t.Filtro), empresaID)
+	if t.NaoExportar {
+		return nil, nil
+	}
+	colunas := t.Colunas
+	if colunas == "" {
+		colunas = "*"
+	}
+	rows, err := t.DB.QueryContext(ctx, fmt.Sprintf("SELECT %s FROM %s WHERE %s", colunas, t.Tabela, t.Filtro), empresaID)
 	if t.ausente(err) {
 		return nil, nil
 	}
@@ -46,14 +57,14 @@ func (t TabelaPG) Exportar(ctx context.Context, empresaID uuid.UUID) ([]Arquivo,
 		return nil, err
 	}
 	defer rows.Close()
-	colunas, err := rows.Columns()
+	nomes, err := rows.Columns()
 	if err != nil {
 		return nil, err
 	}
 	linhas := make([][]any, 0)
 	for rows.Next() {
-		valores := make([]any, len(colunas))
-		ponteiros := make([]any, len(colunas))
+		valores := make([]any, len(nomes))
+		ponteiros := make([]any, len(nomes))
 		for i := range valores {
 			ponteiros[i] = &valores[i]
 		}
@@ -65,7 +76,7 @@ func (t TabelaPG) Exportar(ctx context.Context, empresaID uuid.UUID) ([]Arquivo,
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	conteudo, err := montarCSV(colunas, linhas)
+	conteudo, err := montarCSV(nomes, linhas)
 	if err != nil {
 		return nil, err
 	}
