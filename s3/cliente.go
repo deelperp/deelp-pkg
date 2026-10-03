@@ -7,7 +7,7 @@
 //   - presigned URLs para GET
 //   - listagem por prefixo (com paginacao automatica)
 //   - HeadBucket para healthcheck
-//   - configuracao opcional de CORS no bucket
+//   - provisionamento explícito de CORS no bucket (ConfigurarCORS)
 //
 // Importante: este pacote NAO le os.Getenv internamente. Toda config entra
 // via struct Config — quem cria o cliente decide de onde vem o secret.
@@ -38,6 +38,9 @@ type Config struct {
 
 	CORSOrigin string
 
+	// Endpoint substitui o endpoint da AWS (MinIO, testes). Vazio usa a AWS.
+	Endpoint string
+
 	Logger *slog.Logger
 }
 
@@ -59,9 +62,9 @@ func (c Config) validar() error {
 	return nil
 }
 
-// NewCliente cria um novo cliente S3. Se CORSOrigin estiver definido, aplica
-// a politica ao bucket de forma idempotente.
-func NewCliente(cfg Config) (*Cliente, error) {
+// Open cria o cliente sem alterar nada no bucket. CORS é provisionamento e
+// fica em ConfigurarCORS, chamado de forma explícita.
+func Open(ctx context.Context, cfg Config) (*Cliente, error) {
 	if err := cfg.validar(); err != nil {
 		return nil, err
 	}
@@ -75,22 +78,40 @@ func NewCliente(cfg Config) (*Cliente, error) {
 		))
 	}
 
-	awsCfg, err := config.LoadDefaultConfig(context.Background(), loadOpts...)
+	awsCfg, err := config.LoadDefaultConfig(ctx, loadOpts...)
 	if err != nil {
 		return nil, fmt.Errorf("s3: carregar config AWS: %w", err)
 	}
 
-	cli := s3.NewFromConfig(awsCfg)
-	c := &Cliente{
+	var clientOpts []func(*s3.Options)
+	if endpoint := strings.TrimSpace(cfg.Endpoint); endpoint != "" {
+		clientOpts = append(clientOpts, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(endpoint)
+			o.UsePathStyle = true
+		})
+	}
+	cli := s3.NewFromConfig(awsCfg, clientOpts...)
+	return &Cliente{
 		cli:       cli,
 		presigner: s3.NewPresignClient(cli),
 		bucket:    cfg.Bucket,
 		region:    cfg.Region,
 		logger:    cfg.Logger,
-	}
+	}, nil
+}
 
+// NewCliente cria o cliente e, se CORSOrigin estiver definido, aplica a
+// política ao bucket registrando a falha só em log.
+//
+// Deprecated: use Open e ConfigurarCORS. PutBucketCors substitui a política
+// inteira do bucket, que é compartilhado entre os serviços.
+func NewCliente(cfg Config) (*Cliente, error) {
+	c, err := Open(context.Background(), cfg)
+	if err != nil {
+		return nil, err
+	}
 	if cfg.CORSOrigin != "" {
-		if err := c.configurarCORS(context.Background(), cfg.CORSOrigin); err != nil {
+		if err := c.ConfigurarCORS(context.Background(), cfg.CORSOrigin); err != nil {
 			if c.logger != nil {
 				c.logger.Warn("s3: configurar CORS", "erro", err)
 			}
@@ -99,14 +120,37 @@ func NewCliente(cfg Config) (*Cliente, error) {
 	return c, nil
 }
 
-func (c *Cliente) configurarCORS(ctx context.Context, origem string) error {
+// ConfigurarCORS substitui a política de CORS do bucket pelas origens
+// informadas (GET apenas). Afeta todos os serviços que usam o bucket.
+func (c *Cliente) ConfigurarCORS(ctx context.Context, origens ...string) error {
+	var validas []string
+	for _, origem := range origens {
+		if origem = strings.TrimSpace(origem); origem != "" {
+			validas = append(validas, origem)
+		}
+	}
+	if len(validas) == 0 {
+		return errors.New("s3: ConfigurarCORS exige ao menos uma origem")
+	}
+	for _, origem := range validas {
+		if origem == "*" {
+			return errors.New("s3: origem curinga não é aceita no CORS do bucket")
+		}
+	}
+	if err := c.configurarCORS(ctx, validas); err != nil {
+		return fmt.Errorf("s3: configurar CORS: %w", err)
+	}
+	return nil
+}
+
+func (c *Cliente) configurarCORS(ctx context.Context, origens []string) error {
 	_, err := c.cli.PutBucketCors(ctx, &s3.PutBucketCorsInput{
 		Bucket: aws.String(c.bucket),
 		CORSConfiguration: &types.CORSConfiguration{
 			CORSRules: []types.CORSRule{{
 				AllowedHeaders: []string{"*"},
 				AllowedMethods: []string{"GET"},
-				AllowedOrigins: []string{origem},
+				AllowedOrigins: origens,
 				ExposeHeaders:  []string{},
 				MaxAgeSeconds:  aws.Int32(3600),
 			}},
