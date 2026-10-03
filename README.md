@@ -168,7 +168,7 @@ Exemplo no GitHub Actions:
 
 ```yaml
 - name: Setup Go
-  uses: actions/setup-go@v5
+  uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
   with:
     go-version: '1.27.1'
     cache: true
@@ -180,16 +180,21 @@ Exemplo no GitHub Actions:
     echo "GOPRIVATE=github.com/deelperp/*" >> $GITHUB_ENV
 ```
 
-No Dockerfile:
+No Dockerfile, o token entra como BuildKit secret: existe só durante o `RUN`
+que baixa os módulos e não fica em camada, histórico nem cache de build.
 
 ```dockerfile
+# syntax=docker/dockerfile:1
 FROM golang:1.27.1 AS builder
-ARG GH_PAT
 WORKDIR /app
-RUN git config --global url."https://x-access-token:${GH_PAT}@github.com/".insteadOf "https://github.com/"
 ENV GOPRIVATE=github.com/deelperp/*
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=secret,id=gh_pat,required=true \
+    export GH_PAT="$(cat /run/secrets/gh_pat)" \
+    && GIT_CONFIG_COUNT=1 \
+       GIT_CONFIG_KEY_0="url.https://x-access-token:${GH_PAT}@github.com/.insteadOf" \
+       GIT_CONFIG_VALUE_0="https://github.com/" \
+       go mod download
 COPY . .
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o api
 ```
@@ -197,8 +202,12 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o api
 Build com:
 
 ```bash
-docker build --build-arg GH_PAT=$GH_PAT --file Dockerfile.prod -t imagem .
+GH_PAT=... docker build --secret id=gh_pat,env=GH_PAT --file Dockerfile.prod -t imagem .
 ```
+
+Não usar `--build-arg GH_PAT`: o valor fica no histórico da camada do builder e
+no cache. Os serviços também têm `.github/workflows/quality.yml` (PR e push em
+`main`: módulos, gofmt, vet, `-race`).
 
 ## Promover nova versão
 
