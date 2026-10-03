@@ -1,0 +1,6 @@
+# Violações conhecidas de notificacao-service. Só remova linhas; violação nova reprova o CI.
+internal/application/usecases/processor/consumidor_estoque_nivel_critico.go -> internal/infra/mq
+internal/application/usecases/processor/consumidor_etapa_desbloqueada.go -> internal/infra/mq
+internal/application/usecases/processor/consumidor_ordem_pronta.go -> internal/infra/mq
+internal/application/usecases/processor/consumidor_rabbitmq.go -> internal/adapters/mensageria
+internal/application/usecases/processor/consumidor_rabbitmq.go -> internal/infra/mq

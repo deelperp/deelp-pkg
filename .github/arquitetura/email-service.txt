@@ -1,0 +1,3 @@
+# Violações conhecidas de email-service. Só remova linhas; violação nova reprova o CI.
+internal/application/usecases/envio_email/agendados_tick.go -> internal/infra/mq
+internal/application/usecases/envio_email/processar_email.go -> internal/infra/metricas

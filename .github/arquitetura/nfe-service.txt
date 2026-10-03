@@ -1,0 +1,13 @@
+# Violações conhecidas de nfe-service. Só remova linhas; violação nova reprova o CI.
+internal/application/usecases/nfes/assinar_xml.go -> internal/adapters/storage
+internal/application/usecases/nfes/cancelar.go -> internal/infra/mq
+internal/application/usecases/nfes/cert_loader.go -> internal/infra/crypto
+internal/application/usecases/nfes/enviar_sefaz.go -> internal/adapters/http_client
+internal/application/usecases/nfes/enviar_sefaz.go -> internal/adapters/storage
+internal/application/usecases/nfes/enviar_sefaz.go -> internal/infra/mq
+internal/application/usecases/nfes/gerar_xml.go -> internal/adapters/storage
+internal/domain/repositories/certificado.go -> internal/application/ports/out
+internal/domain/services/auditoria_servico.go -> internal/application/ports/out/calculadora
+internal/domain/services/calculo_rtc.go -> internal/application/ports/out/calculadora
+internal/domain/services/notificador_nfe.go -> internal/application/ports/out/brokers
+internal/domain/services/notificador_nfe.go -> internal/infra/mq

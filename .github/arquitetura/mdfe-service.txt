@@ -1,0 +1,7 @@
+# Violações conhecidas de mdfe-service. Só remova linhas; violação nova reprova o CI.
+internal/application/usecases/mdfe_usecases/cancelar.go -> internal/infra/mq
+internal/application/usecases/mdfe_usecases/cert_loader.go -> internal/infra/crypto
+internal/application/usecases/mdfe_usecases/criar.go -> internal/infra/mq
+internal/application/usecases/mdfe_usecases/encerrar.go -> internal/infra/mq
+internal/application/usecases/mdfe_usecases/incluir_condutor.go -> internal/infra/mq
+internal/application/usecases/mdfe_usecases/transmitir.go -> internal/infra/mq

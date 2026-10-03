@@ -1,0 +1,15 @@
+# Violações conhecidas de cliente-service. Só remova linhas; violação nova reprova o CI.
+internal/application/usecases/assinatura/cobranca_assinatura.go -> internal/adapters/http_client
+internal/application/usecases/assinatura/fechar_competencia.go -> internal/adapters/http_client
+internal/application/usecases/configuracoes/enviar_certificado_configuracao.go -> internal/infra/crypto
+internal/application/usecases/configuracoes_pagamento/consultar_interno.go -> internal/infra/crypto
+internal/application/usecases/configuracoes_pagamento/salvar.go -> internal/infra/crypto
+internal/domain/repositories/cargo.go -> internal/application/ports/out
+internal/domain/repositories/cidade.go -> internal/application/ports/out
+internal/domain/repositories/cliente.go -> internal/application/ports/out
+internal/domain/repositories/condutor.go -> internal/application/ports/out
+internal/domain/repositories/departamento.go -> internal/application/ports/out
+internal/domain/repositories/estado.go -> internal/application/ports/out
+internal/domain/repositories/fornecedor.go -> internal/application/ports/out
+internal/domain/repositories/transportadora.go -> internal/application/ports/out
+internal/domain/repositories/veiculo.go -> internal/application/ports/out

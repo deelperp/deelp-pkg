@@ -39,20 +39,20 @@ versionamento individual e funciona bem para o time pequeno do Deelp.
 |---|---|
 | `assinatura` | Verificação de assinatura comercial e bloqueio por plano |
 | `auth` | JWT middleware (Autenticacao + TenantGuard) + ValidarToken + context helpers |
-| `authz` | Consulta remota de permissões com política de cache por tipo de sessão |
+| `authz` | Consulta remota de permissões; cache com teto e chave sem bearer cru, suporte sem cache |
 | `cache` | Cliente Redis padronizado (go-redis/v9) |
 | `consumo` | Verificação e registro de consumo por empresa |
 | `dfe` | Chave S3 canônica de NF-e / MDF-e / NFS-e (`envio` / `proc` / `eventos`) |
 | `internalauth` | Autenticação de chamadas internas entre serviços |
-| `mensageria` | Conexão RabbitMQ + helpers de exchange/queue |
+| `mensageria` | Conexão RabbitMQ com reconexão + `Publisher` com confirmação, mandatory e erros tipados |
 | `mongodb` | Cliente Mongo + pool tuning + URI ou Host/Port |
 | `observabilidade` | OpenTelemetry (traces + metrics + W3C propagator) |
 | `postgres` | Cliente Postgres + pool tuning + SSLMode |
 | `resposta` | Envelope JSON canônico `{sucesso, mensagem, conteudo}` e writers HTTP (`EscreverErro`, `EscreverResultado`, `EmpresaIdDoToken`) |
-| `s3` | Cliente AWS S3 (upload/download/presigned/CORS) |
+| `s3` | Cliente AWS S3; `Open` não altera o bucket, `ConfigurarCORS` é explícito (`NewCliente` deprecated) |
 | `seguranca` | Rate limiter (Redis-backed), IPBlocker, SecurityAudit, IPDoRequest |
 | `telefone` | Normalização e validação de telefone |
-| `tenantdados` | Inventário, exportação e expurgo de dados de tenant |
+| `tenantdados` | Fachada de exportação/expurgo; núcleo sem drivers em `tenantdados/core`, adapters em `postgres`, `mongo`, `transporte` |
 | `xmldsig` | Assinatura digital de XML fiscal |
 
 Handlers HTTP reusam `resposta` na fronteira:
@@ -70,6 +70,10 @@ resposta.EscreverCriado(w, res.Sucesso, res)
 auth.Config{Responder: resposta.EscreverErro}
 ```
 
+Finalidade, consumidores, dependências permitidas e estabilidade de cada
+pacote: [docs/pacotes.md](docs/pacotes.md). Decisões de arquitetura:
+[docs/adr](docs/adr) (limites, nomenclatura, erros, ciclo de vida, mensageria).
+
 ## Validação automatizada
 
 O workflow `.github/workflows/quality.yml` valida pull requests e pushes em
@@ -79,6 +83,11 @@ As actions são fixadas por SHA.
 Os testes HTTP usam servidores locais; não exigem serviços externos.
 A matriz de compatibilidade valida os 16 consumidores em workspaces
 temporários contendo apenas o candidato de `pkg` e cada serviço.
+A matriz também roda `cmd/deelp-arquitetura`: domínio não importa
+aplicação/adapters/infra e aplicação não importa adapters/infra. As violações
+legadas ficam em `.github/arquitetura/<servico>.txt`; violação nova reprova,
+e a linha do baseline só pode ser removida. O job `Integração / RabbitMQ`
+testa o `Publisher` contra RabbitMQ real.
 Veja [execução local e configuração do CI](docs/compatibility.md).
 
 `authz.HTTPChecker` mantém o cache de permissões das sessões normais, mas

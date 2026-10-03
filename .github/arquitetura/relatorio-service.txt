@@ -1,0 +1,1 @@
+# Violações conhecidas de relatorio-service. Só remova linhas; violação nova reprova o CI.

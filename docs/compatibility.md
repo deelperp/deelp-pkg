@@ -64,3 +64,19 @@ A matriz avalia o código atual dos serviços, por isso mudanças independentes 
 do candidato de falha preexistente. Após publicar uma tag, os serviços ainda devem
 atualizar a dependência e testar a versão publicada com `GOWORK=off`; a matriz não
 substitui essa validação nem testes de integração com infraestrutura real.
+
+## Arquitetura dos consumidores
+
+```sh
+go run ./cmd/deelp-arquitetura -raiz ../tarefa-service -baseline .github/arquitetura/tarefa-service.txt
+go run ./cmd/deelp-arquitetura -raiz ../tarefa-service -gerar-baseline
+```
+
+Ao corrigir uma violação, remova a linha do baseline no mesmo PR do pacote; o
+modo `-estrito` reprova linhas que já não correspondem a nada.
+
+## Integração com RabbitMQ
+
+```sh
+DEELP_RABBITMQ_URL=amqp://guest:guest@127.0.0.1:5672/ go test -race -run Integracao ./mensageria/...
+```

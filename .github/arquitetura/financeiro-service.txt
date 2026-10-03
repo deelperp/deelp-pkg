@@ -1,0 +1,8 @@
+# Violações conhecidas de financeiro-service. Só remova linhas; violação nova reprova o CI.
+internal/application/usecases/anexo_sob_medida/anexo_sob_medida.go -> internal/infra/s3anexo
+internal/application/usecases/contratos/notificar_vencimentos.go -> internal/infra/mq
+internal/application/usecases/dashboard/obter_metricas_cached.go -> internal/adapters/providers
+internal/application/usecases/dashboard/obter_metricas_integradas_cached.go -> internal/adapters/providers
+internal/application/usecases/orcamento_cliente/notificar_aprovacao.go -> internal/infra/mq
+internal/application/usecases/orcamento_cliente/rejeitar.go -> internal/infra/mq
+internal/application/usecases/orcamento_cliente/rejeitar_publico.go -> internal/infra/mq

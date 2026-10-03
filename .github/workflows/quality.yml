@@ -131,6 +131,9 @@ jobs:
         run: |
           git -C pkg rev-parse HEAD
           git -C consumer rev-parse HEAD
+      - name: Dependências entre camadas
+        working-directory: pkg
+        run: go run ./cmd/deelp-arquitetura -raiz ../consumer -baseline .github/arquitetura/${{ matrix.service }}.txt
       - name: Testar consumidor contra o candidato
         run: python3 pkg/scripts/check_consumer.py consumer
       - name: Verificar preservação dos módulos
