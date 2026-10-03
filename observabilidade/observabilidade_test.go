@@ -1,6 +1,8 @@
 package observabilidade
 
 import (
+	"context"
+	"crypto/tls"
 	"testing"
 )
 
@@ -43,16 +45,56 @@ func TestProtocoloEfetivo_RespeitaValorExplicito(t *testing.T) {
 	}
 }
 
-func TestHostDoEndpoint(t *testing.T) {
-	casos := []struct{ in, out string }{
-		{"http://x:4318", "x:4318"},
-		{"https://otel.deelp.com.br/path", "otel.deelp.com.br"},
-		{"x:4317", "x:4317"},
-		{"https://a/b/c", "a"},
+func TestResolveEndpoint(t *testing.T) {
+	casos := []struct {
+		name   string
+		config Config
+		want   endpointConfig
+	}{
+		{"grpc legado", Config{Endpoint: "collector:4317"}, endpointConfig{host: "collector:4317"}},
+		{"http", Config{Endpoint: "http://collector:4318"}, endpointConfig{host: "collector:4318"}},
+		{"https com prefixo", Config{Endpoint: "https://collector/otel/"}, endpointConfig{host: "collector", path: "/otel", secure: true}},
+		{"grpc https explícito", Config{Endpoint: "https://collector:4317", Protocolo: ProtocoloGRPC}, endpointConfig{host: "collector:4317", secure: true}},
+		{"tls sem esquema", Config{Endpoint: "collector:4317", TLSConfig: &tls.Config{}}, endpointConfig{host: "collector:4317", secure: true}},
+		{"ipv6", Config{Endpoint: "[::1]:4317"}, endpointConfig{host: "[::1]:4317"}},
 	}
 	for _, caso := range casos {
-		if got := hostDoEndpoint(caso.in); got != caso.out {
-			t.Errorf("in=%q: esperado %q, obtido %q", caso.in, caso.out, got)
-		}
+		t.Run(caso.name, func(t *testing.T) {
+			got, err := caso.config.resolveEndpoint()
+			if err != nil || got != caso.want {
+				t.Fatalf("resolveEndpoint() = %+v, %v; esperado %+v", got, err, caso.want)
+			}
+		})
+	}
+}
+
+func TestIniciarRejeitaConfiguracaoInvalida(t *testing.T) {
+	casos := []Config{
+		{Endpoint: "collector:4317", Protocolo: "udp"},
+		{Endpoint: "ftp://collector"},
+		{Endpoint: "https://"},
+		{Endpoint: "http://usuario:senha@collector"},
+		{Endpoint: "https://collector?token=segredo"},
+		{Endpoint: "https://collector?"},
+		{Endpoint: "https://collector#traces"},
+		{Endpoint: "https://collector:abc"},
+		{Endpoint: "https://collector:65536"},
+		{Endpoint: "https://collector:0"},
+		{Endpoint: "https://collector:"},
+		{Endpoint: "collector:4318/otel", Protocolo: ProtocoloHTTP},
+		{Endpoint: "https://collector/otel", Protocolo: ProtocoloGRPC},
+		{Endpoint: "http://collector", TLSConfig: &tls.Config{}},
+		{Endpoint: "https://collector", TLSConfig: &tls.Config{InsecureSkipVerify: true}},
+		{Endpoint: "collector:4317", TLSConfig: &tls.Config{InsecureSkipVerify: true}},
+	}
+	for _, config := range casos {
+		t.Run(config.Endpoint+string(config.Protocolo), func(t *testing.T) {
+			config.NomeServico = "test"
+			shutdown, err := Iniciar(context.Background(), config)
+			if err == nil {
+				_ = shutdown(context.Background())
+				t.Fatal("esperado erro de configuração")
+			}
+		})
 	}
 }

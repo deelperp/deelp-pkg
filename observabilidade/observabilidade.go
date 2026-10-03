@@ -17,6 +17,7 @@ package observabilidade
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -32,6 +33,8 @@ import (
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	semconv "go.opentelemetry.io/otel/semconv/v1.27.0"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 )
 
 // Protocolo determina como o cliente OTLP fala com o Collector.
@@ -57,6 +60,9 @@ type Config struct {
 	Endpoint      string
 	Protocolo     Protocolo
 	Logger        *slog.Logger
+	// TLSConfig habilita TLS e permite configurar a CA e certificados de cliente.
+	// HTTPS usa TLS mesmo quando este campo é nil; host:porta mantém o modo sem TLS.
+	TLSConfig *tls.Config
 }
 
 // Desligar é a função retornada por Iniciar; chame-a no shutdown do
@@ -70,6 +76,11 @@ func (c Config) validar() error {
 	if strings.TrimSpace(c.Endpoint) == "" {
 		return errors.New("observabilidade: Endpoint obrigatório")
 	}
+	switch c.Protocolo {
+	case "", ProtocoloAuto, ProtocoloGRPC, ProtocoloHTTP:
+	default:
+		return fmt.Errorf("observabilidade: protocolo desconhecido %q", c.Protocolo)
+	}
 	return nil
 }
 
@@ -78,22 +89,11 @@ func (c Config) protocoloEfetivo() Protocolo {
 	case ProtocoloGRPC, ProtocoloHTTP:
 		return c.Protocolo
 	}
-	ep := c.Endpoint
+	ep := strings.TrimSpace(c.Endpoint)
 	if strings.HasPrefix(ep, "http://") || strings.HasPrefix(ep, "https://") {
 		return ProtocoloHTTP
 	}
 	return ProtocoloGRPC
-}
-
-// hostDoEndpoint remove scheme e path do endpoint HTTP, deixando só host:porta.
-// Necessário porque otlptracehttp.WithEndpoint espera só o host.
-func hostDoEndpoint(ep string) string {
-	host := strings.TrimPrefix(ep, "https://")
-	host = strings.TrimPrefix(host, "http://")
-	if idx := strings.Index(host, "/"); idx != -1 {
-		host = host[:idx]
-	}
-	return host
 }
 
 func (c Config) log(msg string, args ...any) {
@@ -108,6 +108,14 @@ func (c Config) log(msg string, args ...any) {
 func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 	if err := cfg.validar(); err != nil {
 		return nil, err
+	}
+	endpoint, err := cfg.resolveEndpoint()
+	if err != nil {
+		return nil, err
+	}
+	tlsConfig := &tls.Config{}
+	if cfg.TLSConfig != nil {
+		tlsConfig = cfg.TLSConfig.Clone()
 	}
 
 	versao := cfg.VersaoServico
@@ -144,20 +152,26 @@ func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 
 	switch proto {
 	case ProtocoloHTTP:
-		host := hostDoEndpoint(cfg.Endpoint)
-		traceExporter, terr := otlptracehttp.New(ctx,
-			otlptracehttp.WithEndpoint(host),
-			otlptracehttp.WithURLPath("/v1/traces"),
-			otlptracehttp.WithInsecure(),
-		)
+		traceOptions := []otlptracehttp.Option{
+			otlptracehttp.WithEndpoint(endpoint.host),
+			otlptracehttp.WithURLPath(endpoint.path + "/v1/traces"),
+		}
+		metricOptions := []otlpmetrichttp.Option{
+			otlpmetrichttp.WithEndpoint(endpoint.host),
+			otlpmetrichttp.WithURLPath(endpoint.path + "/v1/metrics"),
+		}
+		if endpoint.secure {
+			traceOptions = append(traceOptions, otlptracehttp.WithTLSClientConfig(tlsConfig), otlptracehttp.WithProxy(secureProxy))
+			metricOptions = append(metricOptions, otlpmetrichttp.WithTLSClientConfig(tlsConfig), otlpmetrichttp.WithProxy(secureProxy))
+		} else {
+			traceOptions = append(traceOptions, otlptracehttp.WithInsecure())
+			metricOptions = append(metricOptions, otlpmetrichttp.WithInsecure())
+		}
+		traceExporter, terr := otlptracehttp.New(ctx, traceOptions...)
 		if terr != nil {
 			return nil, fmt.Errorf("observabilidade: criar trace exporter HTTP: %w", terr)
 		}
-		metricExporter, merr := otlpmetrichttp.New(ctx,
-			otlpmetrichttp.WithEndpoint(host),
-			otlpmetrichttp.WithURLPath("/v1/metrics"),
-			otlpmetrichttp.WithInsecure(),
-		)
+		metricExporter, merr := otlpmetrichttp.New(ctx, metricOptions...)
 		if merr != nil {
 			_ = traceExporter.Shutdown(ctx)
 			return nil, fmt.Errorf("observabilidade: criar metric exporter HTTP: %w", merr)
@@ -172,16 +186,20 @@ func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 		)
 
 	case ProtocoloGRPC:
+		var transportCredentials credentials.TransportCredentials = insecure.NewCredentials()
+		if endpoint.secure {
+			transportCredentials = credentials.NewTLS(tlsConfig)
+		}
 		traceExporter, terr := otlptracegrpc.New(ctx,
-			otlptracegrpc.WithInsecure(),
-			otlptracegrpc.WithEndpoint(cfg.Endpoint),
+			otlptracegrpc.WithTLSCredentials(transportCredentials),
+			otlptracegrpc.WithEndpoint(endpoint.host),
 		)
 		if terr != nil {
 			return nil, fmt.Errorf("observabilidade: criar trace exporter gRPC: %w", terr)
 		}
 		metricExporter, merr := otlpmetricgrpc.New(ctx,
-			otlpmetricgrpc.WithInsecure(),
-			otlpmetricgrpc.WithEndpoint(cfg.Endpoint),
+			otlpmetricgrpc.WithTLSCredentials(transportCredentials),
+			otlpmetricgrpc.WithEndpoint(endpoint.host),
 		)
 		if merr != nil {
 			_ = traceExporter.Shutdown(ctx)

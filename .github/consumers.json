@@ -1,0 +1,18 @@
+[
+  "autenticacao-service",
+  "cliente-service",
+  "email-service",
+  "estoque-service",
+  "fatura-service",
+  "financeiro-service",
+  "marketing-service",
+  "mdfe-service",
+  "nfe-service",
+  "nfse-service",
+  "notificacao-service",
+  "ordem-service",
+  "relatorio-service",
+  "roadmap-service",
+  "tarefa-service",
+  "wiki-service"
+]

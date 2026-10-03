@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/deelperp/deelp-pkg/auth"
 )
 
 // TTLCache é por quanto tempo o mapa de permissões do usuário fica válido em
@@ -98,12 +100,16 @@ func contem(acoes []string, acao string) bool {
 // TemPermissao consulta as permissões do usuário (empresa vem do token
 // repassado) e verifica modulo:acao. Erros de rede/parse são propagados para o
 // chamador tratar como fail-closed.
+// Sessões de suporte são revalidadas em toda chamada, sem cache.
 func (c *HTTPChecker) TemPermissao(ctx context.Context, bearer, usuarioId, modulo, acao string) (bool, error) {
 	if c.baseURL == "" {
 		return false, fmt.Errorf("AUTENTICACAO_SERVICE_URL não configurada")
 	}
-	if permissoes, ok := c.doCache(chaveCache(usuarioId, bearer)); ok {
-		return contem(permissoes[modulo], acao), nil
+	usarCache := !auth.EhSessaoSuporte(ctx)
+	if usarCache {
+		if permissoes, ok := c.doCache(chaveCache(usuarioId, bearer)); ok {
+			return contem(permissoes[modulo], acao), nil
+		}
 	}
 	url := fmt.Sprintf("%s/autenticacao-service/v1/usuarios/%s/permissoes", c.baseURL, usuarioId)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -142,6 +148,8 @@ func (c *HTTPChecker) TemPermissao(ctx context.Context, bearer, usuarioId, modul
 		return false, nil
 	}
 
-	c.guardar(chaveCache(usuarioId, bearer), parsed.Conteudo)
+	if usarCache {
+		c.guardar(chaveCache(usuarioId, bearer), parsed.Conteudo)
+	}
 	return contem(parsed.Conteudo[modulo], acao), nil
 }

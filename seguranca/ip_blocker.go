@@ -54,8 +54,8 @@ func NewIPBlocker(cfg IPBlockerConfig) *IPBlocker {
 	return b
 }
 
-func (b *IPBlocker) chaveFalha(ip string) string  { return b.prefixo + "f:" + ip }
-func (b *IPBlocker) chaveBloq(ip string) string   { return b.prefixo + "b:" + ip }
+func (b *IPBlocker) chaveFalha(ip string) string { return b.prefixo + "f:" + ip }
+func (b *IPBlocker) chaveBloq(ip string) string  { return b.prefixo + "b:" + ip }
 
 // RegistrarFalha incrementa o contador. Bloqueia o IP se atingir o máximo.
 func (b *IPBlocker) RegistrarFalha(ip string) {

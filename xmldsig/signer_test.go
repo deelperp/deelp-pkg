@@ -27,7 +27,7 @@ type casoDFe struct {
 	raiz    string
 	xml     string
 	// Goldens — assinatura é determinística (PKCS1v15 + chave fixa).
-	digest    string
+	digest     string
 	assinatura string
 }
 

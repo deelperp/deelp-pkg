@@ -12,13 +12,13 @@ import (
 const meterNome = "deelp.seguranca"
 
 var (
-	metricasOnce          sync.Once
-	contadorEventos       metric.Int64Counter
+	metricasOnce           sync.Once
+	contadorEventos        metric.Int64Counter
 	contadorLoginTentativa metric.Int64Counter
-	contadorIPBlocks      metric.Int64Counter
-	contadorTenantGuard   metric.Int64Counter
-	contadorCSRFFalha     metric.Int64Counter
-	contadorRefreshFalha  metric.Int64Counter
+	contadorIPBlocks       metric.Int64Counter
+	contadorTenantGuard    metric.Int64Counter
+	contadorCSRFFalha      metric.Int64Counter
+	contadorRefreshFalha   metric.Int64Counter
 )
 
 func inicializarMetricas() {

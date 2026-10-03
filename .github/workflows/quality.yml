@@ -1,0 +1,128 @@
+name: Qualidade do deelp-pkg
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GOWORK: 'off'
+  GOFLAGS: -mod=readonly
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Verificar dependências
+        run: |
+          go mod download
+          go mod verify
+          git diff --exit-code -- go.mod go.sum
+      - name: Formatação
+        run: |
+          arquivos=$(gofmt -l .)
+          if [ -n "$arquivos" ]; then
+            echo "::error::Arquivos fora do gofmt:"
+            echo "$arquivos"
+            exit 1
+          fi
+      - name: Análise estática
+        run: go vet ./...
+      - name: Testes com detector de condições de corrida
+        run: go test -race -count=1 ./...
+
+  consumer_matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      services: ${{ steps.matrix.outputs.services }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - name: Verificar acesso aos repositórios privados
+        env:
+          CONSUMERS_TOKEN: ${{ secrets.GH_PAT_DEELP_CONSUMERS }}
+        run: |
+          if [ -z "$CONSUMERS_TOKEN" ]; then
+            echo '::error::Configure GH_PAT_DEELP_CONSUMERS com Contents:read nos 16 consumidores. PRs de forks precisam ser validados em uma branch interna revisada.'
+            exit 1
+          fi
+      - id: matrix
+        name: Carregar inventário de consumidores
+        run: |
+          jq -e 'type == "array" and length > 0 and length == (unique | length) and all(.[]; test("^[a-z][a-z0-9-]*-service$"))' .github/consumers.json
+          echo "services=$(jq -c . .github/consumers.json)" >> "$GITHUB_OUTPUT"
+
+  consumers:
+    needs: consumer_matrix
+    name: Consumidor / ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix:
+        service: ${{ fromJSON(needs.consumer_matrix.outputs.services) }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          path: pkg
+          persist-credentials: false
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: deelperp/${{ matrix.service }}
+          ref: main
+          token: ${{ secrets.GH_PAT_DEELP_CONSUMERS }}
+          path: consumer
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: pkg/go.mod
+          cache-dependency-path: |
+            pkg/go.sum
+            consumer/go.sum
+      - name: Instalar validador dos schemas fiscais
+        run: sudo apt-get update && sudo apt-get install -y libxml2-utils
+      - name: Registrar revisões verificadas
+        run: |
+          git -C pkg rev-parse HEAD
+          git -C consumer rev-parse HEAD
+      - name: Testar consumidor contra o candidato
+        run: python3 pkg/scripts/check_consumer.py consumer
+      - name: Verificar preservação dos módulos
+        if: always()
+        run: |
+          git -C pkg diff --exit-code -- go.mod go.sum
+          git -C consumer diff --exit-code -- go.mod go.sum
+
+  compatibility:
+    name: Compatibilidade dos consumidores
+    if: always()
+    needs: [consumer_matrix, consumers]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Exigir conclusão de toda a matriz
+        env:
+          MATRIX_RESULT: ${{ needs.consumer_matrix.result }}
+          CONSUMERS_RESULT: ${{ needs.consumers.result }}
+        run: |
+          test "$MATRIX_RESULT" = success
+          test "$CONSUMERS_RESULT" = success

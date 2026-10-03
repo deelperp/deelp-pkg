@@ -10,16 +10,23 @@ Pacotes compartilhados entre os microserviços da plataforma Deelp.
 ```
 deelp-pkg/
 ├── go.mod                         module github.com/deelperp/deelp-pkg
+├── assinatura/       import "github.com/deelperp/deelp-pkg/assinatura"
 ├── auth/             import "github.com/deelperp/deelp-pkg/auth"
+├── authz/            import "github.com/deelperp/deelp-pkg/authz"
 ├── cache/            import "github.com/deelperp/deelp-pkg/cache"
+├── consumo/          import "github.com/deelperp/deelp-pkg/consumo"
 ├── dfe/              import "github.com/deelperp/deelp-pkg/dfe"
+├── internalauth/     import "github.com/deelperp/deelp-pkg/internalauth"
 ├── mensageria/       import "github.com/deelperp/deelp-pkg/mensageria"
 ├── mongodb/          import "github.com/deelperp/deelp-pkg/mongodb"
 ├── observabilidade/  import "github.com/deelperp/deelp-pkg/observabilidade"
 ├── postgres/         import "github.com/deelperp/deelp-pkg/postgres"
 ├── resposta/         import "github.com/deelperp/deelp-pkg/resposta"
 ├── s3/               import "github.com/deelperp/deelp-pkg/s3"
-└── seguranca/        import "github.com/deelperp/deelp-pkg/seguranca"
+├── seguranca/        import "github.com/deelperp/deelp-pkg/seguranca"
+├── telefone/         import "github.com/deelperp/deelp-pkg/telefone"
+├── tenantdados/      import "github.com/deelperp/deelp-pkg/tenantdados"
+└── xmldsig/          import "github.com/deelperp/deelp-pkg/xmldsig"
 ```
 
 Módulo único, **uma versão para todos os subpacotes**. Quando promovem-se mudanças,
@@ -30,9 +37,13 @@ versionamento individual e funciona bem para o time pequeno do Deelp.
 
 | Pacote | Resumo |
 |---|---|
+| `assinatura` | Verificação de assinatura comercial e bloqueio por plano |
 | `auth` | JWT middleware (Autenticacao + TenantGuard) + ValidarToken + context helpers |
+| `authz` | Consulta remota de permissões com política de cache por tipo de sessão |
 | `cache` | Cliente Redis padronizado (go-redis/v9) |
+| `consumo` | Verificação e registro de consumo por empresa |
 | `dfe` | Chave S3 canônica de NF-e / MDF-e / NFS-e (`envio` / `proc` / `eventos`) |
+| `internalauth` | Autenticação de chamadas internas entre serviços |
 | `mensageria` | Conexão RabbitMQ + helpers de exchange/queue |
 | `mongodb` | Cliente Mongo + pool tuning + URI ou Host/Port |
 | `observabilidade` | OpenTelemetry (traces + metrics + W3C propagator) |
@@ -40,6 +51,9 @@ versionamento individual e funciona bem para o time pequeno do Deelp.
 | `resposta` | Envelope JSON canônico `{sucesso, mensagem, conteudo}` e writers HTTP (`EscreverErro`, `EscreverResultado`, `EmpresaIdDoToken`) |
 | `s3` | Cliente AWS S3 (upload/download/presigned/CORS) |
 | `seguranca` | Rate limiter (Redis-backed), IPBlocker, SecurityAudit, IPDoRequest |
+| `telefone` | Normalização e validação de telefone |
+| `tenantdados` | Inventário, exportação e expurgo de dados de tenant |
+| `xmldsig` | Assinatura digital de XML fiscal |
 
 Handlers HTTP reusam `resposta` na fronteira:
 
@@ -55,6 +69,53 @@ resposta.EscreverSaida(w, res.Sucesso, res)
 resposta.EscreverCriado(w, res.Sucesso, res)
 auth.Config{Responder: resposta.EscreverErro}
 ```
+
+## Validação automatizada
+
+O workflow `.github/workflows/quality.yml` valida pull requests e pushes em
+`main`, usando a versão de Go declarada no `go.mod` e `GOWORK=off`. Executa
+verificação dos módulos, `gofmt`, `go vet ./...` e `go test -race -count=1 ./...`.
+As actions são fixadas por SHA.
+Os testes HTTP usam servidores locais; não exigem serviços externos.
+A matriz de compatibilidade valida os 16 consumidores em workspaces
+temporários contendo apenas o candidato de `pkg` e cada serviço.
+Veja [execução local e configuração do CI](docs/compatibility.md).
+
+`authz.HTTPChecker` mantém o cache de permissões das sessões normais, mas
+revalida sessões de suporte em toda chamada. O chamador deve propagar o
+contexto autenticado por `auth.Autenticacao` ou `auth.ComClaims` após validar
+o JWT. Encerrar suporte ou revogar escrita precisa valer na próxima consulta,
+inclusive quando já existe uma entrada de cache para o mesmo token.
+
+## Transporte OpenTelemetry
+
+`observabilidade.Iniciar` mantém os providers globais de traces e métricas.
+O endpoint determina o transporte quando `Protocolo` é vazio ou `ProtocoloAuto`:
+
+| Endpoint | Protocolo automático | Transporte |
+|---|---|---|
+| `collector:4317` | gRPC | Sem TLS, compatível com os serviços atuais |
+| `http://collector:4318` | HTTP | Sem TLS |
+| `https://collector:4318` | HTTP | TLS com validação do certificado |
+| `collector:4317` + `TLSConfig` | gRPC | TLS com a configuração fornecida |
+
+`ProtocoloGRPC` explícito também aceita `https://collector:4317` para usar TLS.
+Para uma CA privada ou mTLS, forneça `TLSConfig: &tls.Config{RootCAs: roots}`
+e, se necessário, `Certificates`. A configuração é clonada ao iniciar.
+HTTP com prefixo, como `https://collector/otel`, exporta para
+`/otel/v1/traces` e `/otel/v1/metrics`. URLs gRPC não aceitam prefixo.
+Credenciais na URL, query, fragmento, protocolo desconhecido e a combinação
+`http://` com `TLSConfig` e `TLSConfig.InsecureSkipVerify` são rejeitados antes
+da criação dos exporters.
+
+Os exporters HTTP v1.27 podem herdar transporte inseguro de variáveis
+`OTEL_EXPORTER_OTLP_*`, mesmo quando TLS é configurado pela aplicação.
+Quando isso conflita com TLS solicitado, a exportação falha antes de abrir
+a conexão; remova o endpoint `http://` ou a opção `INSECURE` conflitante do
+ambiente. A proteção também bloqueia redirecionamento para HTTP. Nenhum
+certificado é aceito automaticamente e não há fallback para plaintext.
+O startup dos exporters é assíncrono: inicialização bem-sucedida não prova
+conectividade com o collector; observe os erros de exportação e de shutdown.
 
 ## Desenvolvimento local
 
