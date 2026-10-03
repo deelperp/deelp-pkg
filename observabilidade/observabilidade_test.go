@@ -28,6 +28,8 @@ func TestProtocoloEfetivo_AutoDetectaHttpPorScheme(t *testing.T) {
 		{"otel-collector:4317", ProtocoloGRPC},
 		{"http://otel-collector:4318", ProtocoloHTTP},
 		{"https://otel.deelp.com.br", ProtocoloHTTP},
+		{"HTTPS://otel.deelp.com.br", ProtocoloHTTP},
+		{"HtTp://otel-collector:4318", ProtocoloHTTP},
 		{"otel.deelp.com.br:4317", ProtocoloGRPC}, // sem scheme = gRPC
 	}
 	for _, caso := range casos {

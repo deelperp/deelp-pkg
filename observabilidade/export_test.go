@@ -27,13 +27,16 @@ import (
 
 func TestIniciar_ExportaHTTP(t *testing.T) {
 	for _, tc := range []struct {
-		name       string
-		tls        bool
-		withoutURL bool
+		name        string
+		tls         bool
+		withoutURL  bool
+		upperScheme bool
 	}{
 		{name: "http_com_prefixo"},
 		{name: "https_com_prefixo", tls: true},
 		{name: "tls_config_sem_scheme", tls: true, withoutURL: true},
+		{name: "http_scheme_maiusculo", upperScheme: true},
+		{name: "https_scheme_maiusculo", tls: true, upperScheme: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			clearOTLPEnvironment(t)
@@ -90,6 +93,11 @@ func TestIniciar_ExportaHTTP(t *testing.T) {
 			}
 			if tc.withoutURL {
 				cfg.Endpoint = server.Listener.Addr().String()
+			}
+			if tc.upperScheme {
+				scheme, endpoint, _ := strings.Cut(cfg.Endpoint, "://")
+				cfg.Endpoint = strings.ToUpper(scheme) + "://" + endpoint
+				cfg.Protocolo = ProtocoloAuto
 			}
 			startOTLP(t, cfg)
 			traceErr, metricErr := flushOTLP(t)

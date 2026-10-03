@@ -89,7 +89,7 @@ func (c Config) protocoloEfetivo() Protocolo {
 	case ProtocoloGRPC, ProtocoloHTTP:
 		return c.Protocolo
 	}
-	ep := strings.TrimSpace(c.Endpoint)
+	ep := strings.ToLower(strings.TrimSpace(c.Endpoint))
 	if strings.HasPrefix(ep, "http://") || strings.HasPrefix(ep, "https://") {
 		return ProtocoloHTTP
 	}
