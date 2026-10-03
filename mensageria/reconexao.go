@@ -142,3 +142,13 @@ func min(a, b time.Duration) time.Duration {
 	}
 	return b
 }
+
+// Close encerra a conexão atual; IniciarMonitoramento retorna em seguida.
+func (g *GerenciadorConexao) Close() error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if g.conn == nil || g.conn.IsClosed() {
+		return nil
+	}
+	return g.conn.Close()
+}

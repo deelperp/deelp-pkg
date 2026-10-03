@@ -47,6 +47,33 @@ jobs:
       - name: Testes com detector de condições de corrida
         run: go test -race -count=1 ./...
 
+  integracao_rabbitmq:
+    name: Integração / RabbitMQ
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      rabbitmq:
+        image: rabbitmq:3.13-alpine
+        ports:
+          - 5672:5672
+        options: >-
+          --health-cmd "rabbitmq-diagnostics -q ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DEELP_RABBITMQ_URL: amqp://guest:guest@127.0.0.1:5672/
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Publisher contra broker real
+        run: go test -race -count=1 -run Integracao -v ./mensageria/...
+
   consumer_matrix:
     runs-on: ubuntu-latest
     timeout-minutes: 5
