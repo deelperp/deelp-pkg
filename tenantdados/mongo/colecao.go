@@ -1,19 +1,20 @@
-package tenantdados
+package mongo
 
 import (
 	"context"
 	"sort"
 
+	"github.com/deelperp/deelp-pkg/tenantdados/core"
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/mongo"
+	mongodriver "go.mongodb.org/mongo-driver/mongo"
 )
 
 // ColecaoMongo declara uma coleção do tenant. Filtro recebe o empresaId e
 // devolve o filtro (o tipo do campo varia por serviço: string ou UUID binário).
 // Campos aninhados viram JSON na célula do CSV — nada se perde na exportação.
 type ColecaoMongo struct {
-	DB             *mongo.Database
+	DB             *mongodriver.Database
 	Colecao        string
 	Filtro         func(empresaID uuid.UUID) bson.M
 	FaseExpurgo    int
@@ -42,7 +43,7 @@ func (c ColecaoMongo) Fase() int {
 	return c.FaseExpurgo
 }
 
-func (c ColecaoMongo) Exportar(ctx context.Context, empresaID uuid.UUID) ([]Arquivo, error) {
+func (c ColecaoMongo) Exportar(ctx context.Context, empresaID uuid.UUID) ([]core.Arquivo, error) {
 	if c.NaoExportar {
 		return nil, nil
 	}
@@ -81,11 +82,11 @@ func (c ColecaoMongo) Exportar(ctx context.Context, empresaID uuid.UUID) ([]Arqu
 		}
 		linhas = append(linhas, linha)
 	}
-	conteudo, err := montarCSV(colunas, linhas)
+	conteudo, err := core.MontarCSV(colunas, linhas)
 	if err != nil {
 		return nil, err
 	}
-	return []Arquivo{{Nome: nomeArquivo(c.Nome()), Conteudo: conteudo}}, nil
+	return []core.Arquivo{{Nome: core.NomeArquivo(c.Nome()), Conteudo: conteudo}}, nil
 }
 
 func celulaMongo(v any) any {
@@ -100,18 +101,18 @@ func celulaMongo(v any) any {
 	return valorMongoSimples(v)
 }
 
-func (c ColecaoMongo) Contar(ctx context.Context, empresaID uuid.UUID) (Contagem, error) {
+func (c ColecaoMongo) Contar(ctx context.Context, empresaID uuid.UUID) (core.Contagem, error) {
 	n, err := c.DB.Collection(c.Colecao).CountDocuments(ctx, c.Filtro(empresaID))
-	return Contagem{Fonte: c.Nome(), Quantidade: n, Retido: c.Retida, Motivo: c.MotivoRetencao}, err
+	return core.Contagem{Fonte: c.Nome(), Quantidade: n, Retido: c.Retida, Motivo: c.MotivoRetencao}, err
 }
 
-func (c ColecaoMongo) Apagar(ctx context.Context, empresaID uuid.UUID) (Contagem, error) {
+func (c ColecaoMongo) Apagar(ctx context.Context, empresaID uuid.UUID) (core.Contagem, error) {
 	if c.Retida {
 		return c.Contar(ctx, empresaID)
 	}
 	res, err := c.DB.Collection(c.Colecao).DeleteMany(ctx, c.Filtro(empresaID))
 	if err != nil {
-		return Contagem{Fonte: c.Nome()}, err
+		return core.Contagem{Fonte: c.Nome()}, err
 	}
-	return Contagem{Fonte: c.Nome(), Quantidade: res.DeletedCount}, nil
+	return core.Contagem{Fonte: c.Nome(), Quantidade: res.DeletedCount}, nil
 }

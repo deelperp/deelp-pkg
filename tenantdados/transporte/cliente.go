@@ -1,4 +1,4 @@
-package tenantdados
+package transporte
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/deelperp/deelp-pkg/internalauth"
+	"github.com/deelperp/deelp-pkg/tenantdados/core"
 	"github.com/google/uuid"
 )
 
@@ -60,20 +61,20 @@ func (c *Cliente) Exportar(ctx context.Context, empresaID uuid.UUID) ([]byte, er
 	return corpo, nil
 }
 
-func (c *Cliente) Expurgar(ctx context.Context, empresaID uuid.UUID, fase int, simular bool) (RelatorioExpurgo, error) {
+func (c *Cliente) Expurgar(ctx context.Context, empresaID uuid.UUID, fase int, simular bool) (core.RelatorioExpurgo, error) {
 	caminho := fmt.Sprintf("%s?fase=%d&simular=%t", CaminhoExpurgo, fase, simular)
 	resp, err := c.requisicao(ctx, http.MethodPost, caminho, empresaID)
 	if err != nil {
-		return RelatorioExpurgo{Servico: c.Servico, Fase: fase, Simulado: simular}, err
+		return core.RelatorioExpurgo{Servico: c.Servico, Fase: fase, Simulado: simular}, err
 	}
 	defer resp.Body.Close()
 	var envelope struct {
-		Sucesso  bool             `json:"sucesso"`
-		Mensagem string           `json:"mensagem"`
-		Conteudo RelatorioExpurgo `json:"conteudo"`
+		Sucesso  bool                  `json:"sucesso"`
+		Mensagem string                `json:"mensagem"`
+		Conteudo core.RelatorioExpurgo `json:"conteudo"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&envelope); err != nil {
-		return RelatorioExpurgo{Servico: c.Servico, Fase: fase, Simulado: simular}, fmt.Errorf("%s respondeu %d sem relatório", c.Servico, resp.StatusCode)
+		return core.RelatorioExpurgo{Servico: c.Servico, Fase: fase, Simulado: simular}, fmt.Errorf("%s respondeu %d sem relatório", c.Servico, resp.StatusCode)
 	}
 	envelope.Conteudo.Servico = c.Servico
 	if !envelope.Sucesso || resp.StatusCode != http.StatusOK {

@@ -1,4 +1,4 @@
-package tenantdados
+package core
 
 import (
 	"bytes"
@@ -34,9 +34,9 @@ func valorCSV(v any) string {
 	}
 }
 
-// montarCSV usa ";" como separador: é o que o Excel configurado em pt-BR
+// MontarCSV usa ";" como separador: é o que o Excel configurado em pt-BR
 // espera, e vírgula aparece dentro de valor decimal e de endereço.
-func montarCSV(colunas []string, linhas [][]any) ([]byte, error) {
+func MontarCSV(colunas []string, linhas [][]any) ([]byte, error) {
 	var buf bytes.Buffer
 	buf.Write(bomUTF8)
 	w := csv.NewWriter(&buf)

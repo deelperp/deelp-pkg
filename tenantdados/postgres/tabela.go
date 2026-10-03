@@ -1,4 +1,4 @@
-package tenantdados
+package postgres
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 
 	"github.com/lib/pq"
 
+	"github.com/deelperp/deelp-pkg/tenantdados/core"
 	"github.com/google/uuid"
 )
 
@@ -41,7 +42,7 @@ func (t TabelaPG) ausente(err error) bool {
 func (t TabelaPG) Nome() string { return t.Tabela }
 func (t TabelaPG) Fase() int    { return t.FaseExpurgo }
 
-func (t TabelaPG) Exportar(ctx context.Context, empresaID uuid.UUID) ([]Arquivo, error) {
+func (t TabelaPG) Exportar(ctx context.Context, empresaID uuid.UUID) ([]core.Arquivo, error) {
 	if t.NaoExportar {
 		return nil, nil
 	}
@@ -76,23 +77,23 @@ func (t TabelaPG) Exportar(ctx context.Context, empresaID uuid.UUID) ([]Arquivo,
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	conteudo, err := montarCSV(nomes, linhas)
+	conteudo, err := core.MontarCSV(nomes, linhas)
 	if err != nil {
 		return nil, err
 	}
-	return []Arquivo{{Nome: nomeArquivo(t.Tabela), Conteudo: conteudo}}, nil
+	return []core.Arquivo{{Nome: core.NomeArquivo(t.Tabela), Conteudo: conteudo}}, nil
 }
 
-func (t TabelaPG) Contar(ctx context.Context, empresaID uuid.UUID) (Contagem, error) {
+func (t TabelaPG) Contar(ctx context.Context, empresaID uuid.UUID) (core.Contagem, error) {
 	var n int64
 	err := t.DB.QueryRowContext(ctx, fmt.Sprintf("SELECT count(*) FROM %s WHERE %s", t.Tabela, t.Filtro), empresaID).Scan(&n)
 	if t.ausente(err) {
 		err = nil
 	}
-	return Contagem{Fonte: t.Tabela, Quantidade: n, Retido: t.Retida, Motivo: t.MotivoRetencao}, err
+	return core.Contagem{Fonte: t.Tabela, Quantidade: n, Retido: t.Retida, Motivo: t.MotivoRetencao}, err
 }
 
-func (t TabelaPG) Apagar(ctx context.Context, empresaID uuid.UUID) (Contagem, error) {
+func (t TabelaPG) Apagar(ctx context.Context, empresaID uuid.UUID) (core.Contagem, error) {
 	if t.Retida {
 		return t.Contar(ctx, empresaID)
 	}
@@ -102,11 +103,11 @@ func (t TabelaPG) Apagar(ctx context.Context, empresaID uuid.UUID) (Contagem, er
 	}
 	res, err := t.DB.ExecContext(ctx, comando, empresaID)
 	if t.ausente(err) {
-		return Contagem{Fonte: t.Tabela}, nil
+		return core.Contagem{Fonte: t.Tabela}, nil
 	}
 	if err != nil {
-		return Contagem{Fonte: t.Tabela}, err
+		return core.Contagem{Fonte: t.Tabela}, err
 	}
 	n, _ := res.RowsAffected()
-	return Contagem{Fonte: t.Tabela, Quantidade: n}, nil
+	return core.Contagem{Fonte: t.Tabela, Quantidade: n}, nil
 }

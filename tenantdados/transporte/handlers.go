@@ -1,34 +1,21 @@
-package tenantdados
+package transporte
 
 import (
-	"archive/zip"
 	"encoding/json"
-	"io"
 	"net/http"
 	"strconv"
 
 	"github.com/deelperp/deelp-pkg/internalauth"
+	"github.com/deelperp/deelp-pkg/tenantdados/core"
 	"github.com/google/uuid"
 )
 
 const (
 	CaminhoExportacao = "/interno/tenant/exportacao"
 	CaminhoExpurgo    = "/interno/tenant/expurgo"
-)
 
-func EscreverZip(w io.Writer, arquivos []Arquivo) error {
-	zw := zip.NewWriter(w)
-	for _, a := range arquivos {
-		f, err := zw.Create(a.Nome)
-		if err != nil {
-			return err
-		}
-		if _, err := f.Write(a.Conteudo); err != nil {
-			return err
-		}
-	}
-	return zw.Close()
-}
+	HeaderEmpresa = "X-Empresa-Id"
+)
 
 func responderErro(w http.ResponseWriter, status int, mensagem string) {
 	w.Header().Set("Content-Type", "application/json")
@@ -52,7 +39,7 @@ func empresaDaChamada(w http.ResponseWriter, r *http.Request, v *internalauth.Ve
 }
 
 // HandlerExportacao devolve o ZIP com os CSV (e anexos) do serviço.
-func (s Servico) HandlerExportacao(v *internalauth.Verificador) http.HandlerFunc {
+func HandlerExportacao(s core.Servico, v *internalauth.Verificador) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		empresaID, ok := empresaDaChamada(w, r, v)
 		if !ok {
@@ -65,13 +52,13 @@ func (s Servico) HandlerExportacao(v *internalauth.Verificador) http.HandlerFunc
 		}
 		w.Header().Set("Content-Type", "application/zip")
 		w.WriteHeader(http.StatusOK)
-		_ = EscreverZip(w, arquivos)
+		_ = core.EscreverZip(w, arquivos)
 	}
 }
 
 // HandlerExpurgo: POST ?fase=1|2&simular=true|false. Sem simular=false
 // explícito, só conta — o padrão nunca apaga.
-func (s Servico) HandlerExpurgo(v *internalauth.Verificador) http.HandlerFunc {
+func HandlerExpurgo(s core.Servico, v *internalauth.Verificador) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		empresaID, ok := empresaDaChamada(w, r, v)
 		if !ok {
@@ -92,9 +79,9 @@ func (s Servico) HandlerExpurgo(v *internalauth.Verificador) http.HandlerFunc {
 
 // Envolver atende as duas rotas internas antes do roteador do serviço, que
 // costuma exigir JWT em tudo que não reconhece como público.
-func (s Servico) Envolver(prefixo string, v *internalauth.Verificador, proximo http.Handler) http.Handler {
-	exportacao := s.HandlerExportacao(v)
-	expurgo := s.HandlerExpurgo(v)
+func Envolver(s core.Servico, prefixo string, v *internalauth.Verificador, proximo http.Handler) http.Handler {
+	exportacao := HandlerExportacao(s, v)
+	expurgo := HandlerExpurgo(s, v)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == prefixo+CaminhoExportacao:

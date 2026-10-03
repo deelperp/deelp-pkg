@@ -1,4 +1,4 @@
-package tenantdados
+package core
 
 import (
 	"context"

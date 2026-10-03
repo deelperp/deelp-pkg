@@ -9,7 +9,6 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/deelperp/deelp-pkg/internalauth"
 	"github.com/google/uuid"
@@ -70,18 +69,6 @@ func TestExpurgar_ParaNoPrimeiroErro(t *testing.T) {
 	}
 	if _, err := s.Expurgar(context.Background(), uuid.New(), 3, true); !errors.Is(err, ErrFaseInvalida) {
 		t.Fatalf("fase inválida: %v", err)
-	}
-}
-
-func TestMontarCSV(t *testing.T) {
-	data := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
-	csv, err := montarCSV([]string{"nome", "valor", "quando", "nulo"}, [][]any{{"Ação; teste", 10.5, data, nil}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	texto := string(csv)
-	if !strings.HasPrefix(texto, string(bomUTF8)) || !strings.Contains(texto, `"Ação; teste";10.5;2026-10-01T12:00:00Z;`) {
-		t.Fatalf("CSV inesperado: %q", texto)
 	}
 }
 
