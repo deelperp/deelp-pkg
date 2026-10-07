@@ -4,9 +4,82 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/alicebob/miniredis/v2"
+	"github.com/redis/go-redis/v9"
 )
+
+func TestRateLimiter_Redis_NaoProlongaJanela(t *testing.T) {
+	server := miniredis.RunT(t)
+	client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+	t.Cleanup(func() { _ = client.Close() })
+	rl := NewRateLimiter(RateLimiterConfig{Limite: 2, Janela: time.Minute, Redis: client})
+	ctx := context.Background()
+	verificar := func(esperado bool) {
+		t.Helper()
+		ok, err := rl.Allow(ctx, "ip-1")
+		if err != nil || ok != esperado {
+			t.Fatalf("Allow = %v, %v; esperado %v", ok, err, esperado)
+		}
+	}
+	verificar(true)
+	server.FastForward(30 * time.Second)
+	verificar(true)
+	verificar(false)
+	server.FastForward(31 * time.Second)
+	verificar(true)
+}
+
+func TestRateLimiter_Redis_CompartilhaLimiteEntreReplicasConcorrentes(t *testing.T) {
+	server := miniredis.RunT(t)
+	limitadores := make([]*RateLimiter, 2)
+	for i := range limitadores {
+		client := redis.NewClient(&redis.Options{Addr: server.Addr()})
+		t.Cleanup(func() { _ = client.Close() })
+		limitadores[i] = NewRateLimiter(RateLimiterConfig{Limite: 20, Janela: time.Minute, Redis: client})
+	}
+	var permitidas atomic.Int32
+	var grupo sync.WaitGroup
+	for i := range 50 {
+		grupo.Add(1)
+		go func() {
+			defer grupo.Done()
+			ok, err := limitadores[i%2].Allow(context.Background(), "ip-compartilhado")
+			if err != nil {
+				t.Errorf("Allow: %v", err)
+			}
+			if ok {
+				permitidas.Add(1)
+			}
+		}()
+	}
+	grupo.Wait()
+	if total := permitidas.Load(); total != 20 {
+		t.Fatalf("permitidas = %d, esperado 20 entre ambas as réplicas", total)
+	}
+	if ok, err := limitadores[0].Allow(context.Background(), "outro-ip"); err != nil || !ok {
+		t.Fatalf("outro IP deve ter limite próprio: %v, %v", ok, err)
+	}
+}
+
+func TestRateLimiter_Middleware_RetryAfterEmSegundos(t *testing.T) {
+	rl := NewRateLimiter(RateLimiterConfig{Limite: 1, Janela: 1500 * time.Millisecond})
+	handler := rl.Middleware(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	req := httptest.NewRequest(http.MethodGet, "/x", nil)
+	req.RemoteAddr = "1.2.3.4:1000"
+	handler.ServeHTTP(httptest.NewRecorder(), req)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+	if rec.Code != http.StatusTooManyRequests || rec.Header().Get("Retry-After") != "2" {
+		t.Fatalf("status = %d, Retry-After = %q, esperado 429 e 2 segundos", rec.Code, rec.Header().Get("Retry-After"))
+	}
+}
 
 func TestRateLimiter_InMemory_RespeitaLimite(t *testing.T) {
 	rl := NewRateLimiter(RateLimiterConfig{

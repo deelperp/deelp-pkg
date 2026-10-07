@@ -14,6 +14,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"sync"
@@ -56,6 +57,14 @@ type RateLimiter struct {
 	responder Responder
 }
 
+var incrementarJanelaRedis = redis.NewScript(`
+local quantidade = redis.call('INCR', KEYS[1])
+if quantidade == 1 then
+  redis.call('PEXPIRE', KEYS[1], ARGV[1])
+end
+return quantidade
+`)
+
 func NewRateLimiter(cfg RateLimiterConfig) *RateLimiter {
 	if cfg.Prefixo == "" {
 		cfg.Prefixo = "rl:"
@@ -84,13 +93,11 @@ func (rl *RateLimiter) Allow(ctx context.Context, ip string) (bool, error) {
 
 func (rl *RateLimiter) allowRedis(ctx context.Context, ip string) (bool, error) {
 	key := rl.cfg.Prefixo + ip
-	pipe := rl.cfg.Redis.TxPipeline()
-	incr := pipe.Incr(ctx, key)
-	pipe.Expire(ctx, key, rl.cfg.Janela)
-	if _, err := pipe.Exec(ctx); err != nil {
+	quantidade, err := incrementarJanelaRedis.Run(ctx, rl.cfg.Redis, []string{key}, rl.cfg.Janela.Milliseconds()).Int64()
+	if err != nil {
 		return false, fmt.Errorf("rate_limiter: redis: %w", err)
 	}
-	return incr.Val() <= int64(rl.cfg.Limite), nil
+	return quantidade <= int64(rl.cfg.Limite), nil
 }
 
 // Middleware retorna o handler que aplica o rate limit.
@@ -104,7 +111,7 @@ func (rl *RateLimiter) Middleware(next http.Handler) http.Handler {
 		}
 		if !allowed {
 			w.Header().Set("X-RateLimit-Limit", strconv.Itoa(rl.cfg.Limite))
-			w.Header().Set("Retry-After", rl.cfg.Janela.String())
+			w.Header().Set("Retry-After", strconv.Itoa(int(math.Ceil(rl.cfg.Janela.Seconds()))))
 			rl.responder(w, http.StatusTooManyRequests, "Muitas requisições. Tente novamente mais tarde.")
 			return
 		}
