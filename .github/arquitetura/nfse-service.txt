@@ -3,7 +3,5 @@ internal/application/usecases/nfses/cancelar.go -> internal/infra/mq
 internal/application/usecases/nfses/cert_loader.go -> internal/infra/crypto
 internal/application/usecases/nfses/notificar.go -> internal/adapters/http_client
 internal/application/usecases/nfses/notificar.go -> internal/infra/mq
-internal/application/usecases/nfses/substituir.go -> internal/infra/mq
-internal/application/usecases/nfses/transmitir.go -> internal/infra/mq
 internal/domain/repositories/certificado.go -> internal/application/ports/out
 internal/domain/services/calculo_rtc.go -> internal/application/ports/out/calculadora

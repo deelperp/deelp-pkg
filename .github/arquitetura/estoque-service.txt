@@ -1,5 +1,4 @@
 # Violações conhecidas de estoque-service. Só remova linhas; violação nova reprova o CI.
-internal/application/usecases/dashboard/obter_metricas_estoque_cached.go -> internal/adapters/providers
 internal/application/usecases/mocks/material_component_step_repository.go -> internal/adapters/providers
 internal/domain/repositories/categoria.go -> internal/application/ports/out
 internal/domain/repositories/cclasstrib.go -> internal/application/ports/out

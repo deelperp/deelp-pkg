@@ -1,12 +1,5 @@
 # Violações conhecidas de autenticacao-service. Só remova linhas; violação nova reprova o CI.
-internal/application/usecases/auth/gerar_codigo_2fa.go -> internal/infra/mq
-internal/application/usecases/auth/google_autenticador.go -> internal/infra/security
-internal/application/usecases/usuario/atualizar_senha.go -> internal/infra/security
-internal/application/usecases/usuario/criar_usuario.go -> internal/infra/security
 internal/application/usecases/usuario/enviar_email_confirmacao.go -> internal/infra/mq
 internal/application/usecases/usuario/enviar_email_restaurar_senha.go -> internal/infra/mq
 internal/application/usecases/usuario/enviar_email_senha_alterada.go -> internal/infra/mq
-internal/application/usecases/usuario/excluir_conta.go -> internal/infra/security
 internal/application/usecases/usuario/portabilidade_email.go -> internal/infra/mq
-internal/application/usecases/usuario/redefinir_senha_token.go -> internal/infra/security
-internal/domain/models/usuario.go -> internal/infra/security

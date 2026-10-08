@@ -94,6 +94,9 @@ func ValidarToken(tokenString, secret string) (Claims, error) {
 	if err != nil || !parsed.Valid {
 		return Claims{}, ErrTokenInvalido
 	}
+	if ehRefreshToken(parsed) {
+		return Claims{}, ErrTokenInvalido
+	}
 	c := extrairClaims(parsed)
 	if c.UsuarioId == "" {
 		return c, ErrTokenInvalido
@@ -185,7 +188,7 @@ func Autenticacao(cfg Config) func(http.Handler) http.Handler {
 				}
 				return []byte(cfg.SecretKey), nil
 			})
-			if err != nil || !parsed.Valid {
+			if err != nil || !parsed.Valid || ehRefreshToken(parsed) {
 				resp(w, http.StatusUnauthorized, "Sessão expirada. Por favor, faça login novamente")
 				return
 			}
@@ -293,4 +296,9 @@ func pareceUUID(s string) bool {
 		}
 	}
 	return true
+}
+
+func ehRefreshToken(parsed *jwt.Token) bool {
+	claims, ok := parsed.Claims.(*jwt.MapClaims)
+	return ok && (*claims)["typ"] == "refresh"
 }
