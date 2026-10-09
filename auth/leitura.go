@@ -44,5 +44,7 @@ var sufixosDeLeitura = []string{
 }
 
 var caminhosDeLeitura = []string{
+	"/financeiro-service/v1/simulacoes/caixa",
+	"/financeiro-service/v1/simulacoes/preco",
 	"/notificacao-service/v1",
 }

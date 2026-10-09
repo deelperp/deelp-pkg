@@ -122,3 +122,14 @@ func TestEhRequisicaoDeLeitura_PostSolicitarRelatorioNaoAbre(t *testing.T) {
 		t.Fatal("POST que cria job de relatório não é leitura")
 	}
 }
+
+func TestSimulacoesSomenteCaminhosExatos(t *testing.T) {
+	for _, path := range []string{"/financeiro-service/v1/simulacoes/caixa", "/financeiro-service/v1/simulacoes/preco"} {
+		if !EhRequisicaoDeLeitura(httptest.NewRequest(http.MethodPost, path, nil)) {
+			t.Fatal("simulação deve ser leitura")
+		}
+	}
+	if EhRequisicaoDeLeitura(httptest.NewRequest(http.MethodPost, "/outro-service/v1/simulacoes/caixa", nil)) {
+		t.Fatal("não deve liberar outro serviço")
+	}
+}

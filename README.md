@@ -134,7 +134,7 @@ sobre `deelp-pkg` enquanto desenvolve em um serviço, use Go workspace:
 ```bash
 # uma única vez, na pasta-pai que contém todos os clones:
 cat > go.work <<'EOF'
-go 1.27.1
+go 1.27.2
 use (
     ./deelp-pkg
     ./ordem-service
@@ -170,7 +170,7 @@ Exemplo no GitHub Actions:
 - name: Setup Go
   uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
   with:
-    go-version: '1.27.1'
+    go-version: '1.27.2'
     cache: true
 - name: Configure private modules
   env:
@@ -185,7 +185,7 @@ que baixa os módulos e não fica em camada, histórico nem cache de build.
 
 ```dockerfile
 # syntax=docker/dockerfile:1
-FROM golang:1.27.1 AS builder
+FROM golang:1.27.2 AS builder
 WORKDIR /app
 ENV GOPRIVATE=github.com/deelperp/*
 COPY go.mod go.sum ./
