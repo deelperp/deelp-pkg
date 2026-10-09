@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/deelperp/deelp-pkg/observabilidade"
 	"io"
 	"net/http"
 	"strings"
@@ -28,7 +29,7 @@ type Cliente struct {
 func NovoCliente(servico, baseURL, prefixo, internalKey string) *Cliente {
 	return &Cliente{
 		Servico: servico, BaseURL: strings.TrimRight(baseURL, "/"), Prefixo: prefixo, InternalKey: internalKey,
-		HTTP: &http.Client{Timeout: 10 * time.Minute},
+		HTTP: &http.Client{Timeout: 10 * time.Minute, Transport: observabilidade.Transporte(nil)},
 	}
 }
 

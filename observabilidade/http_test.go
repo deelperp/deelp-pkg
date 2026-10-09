@@ -121,3 +121,13 @@ func TestErroDeMensagemTrunca(t *testing.T) {
 		t.Fatal("mensagem curta deve passar intacta")
 	}
 }
+
+func TestFinalizarSpanErrLimitaMensagemLonga(t *testing.T) {
+	gravador := prepararTracer(t)
+	_, span := Span(t.Context(), "teste", "longa")
+	FinalizarSpanErr(span, errors.New(strings.Repeat("x", 5000)))
+	desc := gravador.Ended()[0].Status().Description
+	if n := len([]rune(desc)); n > limiteMensagemSpan+1 {
+		t.Fatalf("status deveria ser truncado, veio %d runes", n)
+	}
+}

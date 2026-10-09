@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/deelperp/deelp-pkg/observabilidade"
 	"io"
 	"net/http"
 	"time"
@@ -45,7 +46,7 @@ type HTTPChecker struct {
 func NewHTTPChecker(baseURL string) *HTTPChecker {
 	c := &HTTPChecker{
 		baseURL:    baseURL,
-		httpClient: &http.Client{Timeout: 5 * time.Second},
+		httpClient: &http.Client{Timeout: 5 * time.Second, Transport: observabilidade.Transporte(nil)},
 		agora:      time.Now,
 	}
 	c.cache = ttlcache.New[string, entradaCache](CapacidadeCache, func() time.Time { return c.agora() })

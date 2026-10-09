@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/deelperp/deelp-pkg/observabilidade"
 	"io"
 	"net/http"
 	"strings"
@@ -54,7 +55,7 @@ type HTTPChecker struct {
 func NewHTTPChecker(baseURL string) *HTTPChecker {
 	c := &HTTPChecker{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		http:    &http.Client{Timeout: 10 * time.Second},
+		http:    &http.Client{Timeout: 10 * time.Second, Transport: observabilidade.Transporte(nil)},
 		agora:   time.Now,
 	}
 	c.cache = ttlcache.New[string, permissoesEmCache](CapacidadeCache, func() time.Time { return c.agora() })

@@ -21,6 +21,9 @@ func Span(ctx context.Context, escopo, operacao string) (context.Context, trace.
 // que retornam error.
 func FinalizarSpanErr(span trace.Span, err error) {
 	if err != nil {
+		if msg := err.Error(); len([]rune(msg)) > limiteMensagemSpan {
+			err = ErroDeMensagem(msg)
+		}
 		span.RecordError(err)
 		span.SetStatus(codes.Error, err.Error())
 	}
