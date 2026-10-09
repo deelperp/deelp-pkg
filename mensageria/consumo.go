@@ -45,18 +45,24 @@ func (c CarrierAMQP) Keys() []string {
 // processamento. O desfecho (ack/retry/DLQ) continua com o chamador, que o informa
 // em RegistrarRetry/RegistrarDLQ.
 func ProcessarEntrega(ctx context.Context, fila string, d amqp091.Delivery, handler func(context.Context) error) error {
-	ctx = otel.GetTextMapPropagator().Extract(ctx, CarrierAMQP(d.Headers))
+	return ProcessarMensagem(ctx, fila, d.Headers, d.MessageId, d.Timestamp, handler)
+}
+
+// ProcessarMensagem é ProcessarEntrega para quem já perdeu a amqp091.Delivery e só
+// guardou os headers e metadados da entrega.
+func ProcessarMensagem(ctx context.Context, fila string, headers amqp091.Table, messageId string, ts time.Time, handler func(context.Context) error) error {
+	ctx = otel.GetTextMapPropagator().Extract(ctx, CarrierAMQP(headers))
 	ctx, span := otel.Tracer("github.com/deelperp/deelp-pkg/mensageria").Start(ctx, "consumir "+fila,
 		trace.WithSpanKind(trace.SpanKindConsumer),
 		trace.WithAttributes(
 			attribute.String("messaging.system", "rabbitmq"),
 			attribute.String("messaging.destination.name", fila),
-			attribute.String("messaging.message.id", d.MessageId),
-			attribute.Int("messaging.deelp.tentativa", tentativaDe(d.Headers)+1),
+			attribute.String("messaging.message.id", messageId),
+			attribute.Int("messaging.deelp.tentativa", tentativaDe(headers)+1),
 		))
 	attrs := metric.WithAttributes(attribute.String("fila", fila))
-	if !d.Timestamp.IsZero() {
-		latenciaFila.Record(ctx, time.Since(d.Timestamp).Seconds(), attrs)
+	if !ts.IsZero() {
+		latenciaFila.Record(ctx, time.Since(ts).Seconds(), attrs)
 	}
 	inicio := time.Now()
 	err := handler(ctx)

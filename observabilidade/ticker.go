@@ -12,6 +12,7 @@ var (
 	duracaoTicker   = HistogramaSegundos("deelp_ticker_rodada_duracao_seconds", "Duração de cada rodada de job periódico")
 	ultimaExecucao  = Medidor("deelp_ticker_ultima_execucao_timestamp", "Unix time do fim da última rodada do job")
 	intervaloTicker = Medidor("deelp_ticker_intervalo_seconds", "Intervalo esperado entre rodadas do job")
+	falhasTicker    = Contador("deelp_ticker_falhas_total", "Rodadas de job periódico que terminaram com erro")
 )
 
 // RodadaTicker executa uma rodada de job periódico com span, duração, resultado e
@@ -30,6 +31,9 @@ func RodadaTicker(ctx context.Context, job string, intervalo time.Duration, fn f
 		attribute.String("job", job), attribute.String("resultado", resultado)))
 	ultimaExecucao.Record(ctx, float64(time.Now().Unix()), jobAttr)
 	intervaloTicker.Record(ctx, intervalo.Seconds(), jobAttr)
+	if err != nil {
+		falhasTicker.Add(ctx, 1, jobAttr)
+	}
 	return err
 }
 

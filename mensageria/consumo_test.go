@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/rabbitmq/amqp091-go"
 	"go.opentelemetry.io/otel"
@@ -57,5 +58,35 @@ func TestTentativaDe(t *testing.T) {
 		if got := tentativaDe(h); got != esperado[nome] {
 			t.Errorf("%s: esperado %d, veio %d", nome, esperado[nome], got)
 		}
+	}
+}
+
+func TestProcessarMensagemLigaSpanAoProdutor(t *testing.T) {
+	gravador := tracetest.NewSpanRecorder()
+	tp := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(gravador))
+	otel.SetTracerProvider(tp)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
+
+	ctxProdutor, produtor := tp.Tracer("t").Start(context.Background(), "publicar")
+	headers := amqp091.Table{}
+	otel.GetTextMapPropagator().Inject(ctxProdutor, CarrierAMQP(headers))
+	produtor.End()
+
+	err := ProcessarMensagem(context.Background(), "fila.msg", headers, "id-1", time.Now(), func(context.Context) error { return nil })
+	if err != nil {
+		t.Fatalf("erro inesperado: %v", err)
+	}
+
+	var consumo sdktrace.ReadOnlySpan
+	for _, s := range gravador.Ended() {
+		if s.Name() == "consumir fila.msg" {
+			consumo = s
+		}
+	}
+	if consumo == nil {
+		t.Fatal("span de consumo não foi criado")
+	}
+	if consumo.Parent().TraceID() != produtor.SpanContext().TraceID() {
+		t.Fatal("span de consumo não pertence ao trace do produtor")
 	}
 }
