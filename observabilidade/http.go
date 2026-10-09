@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -117,6 +118,7 @@ func MiddlewareHTTP(servico string) func(http.Handler) http.Handler {
 			))
 		})
 		return otelhttp.NewHandler(interno, servico,
+			otelhttp.WithMeterProvider(metricnoop.NewMeterProvider()),
 			otelhttp.WithFilter(func(r *http.Request) bool { return !ignorarRequisicao(r) }),
 			otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string { return r.Method }),
 		)
@@ -156,6 +158,7 @@ func Transporte(base http.RoundTripper) http.RoundTripper {
 		base = http.DefaultTransport
 	}
 	return transporteMedido{base: otelhttp.NewTransport(base,
+		otelhttp.WithMeterProvider(metricnoop.NewMeterProvider()),
 		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 			return "HTTP " + r.Method + " " + destinoDe(r.URL)
 		}),

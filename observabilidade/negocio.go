@@ -2,6 +2,7 @@ package observabilidade
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -48,4 +49,15 @@ func ResultadoDe(err error) string {
 		return "erro"
 	}
 	return "ok"
+}
+
+const limiteMensagemSpan = 200
+
+// ErroDeMensagem transforma a mensagem de um resultado de negócio em erro para o
+// status do span, truncada para não levar texto longo (ou dado do usuário) ao Jaeger.
+func ErroDeMensagem(mensagem string) error {
+	if r := []rune(mensagem); len(r) > limiteMensagemSpan {
+		mensagem = string(r[:limiteMensagemSpan]) + "…"
+	}
+	return errors.New(mensagem)
 }
