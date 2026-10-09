@@ -61,3 +61,16 @@ func ErroDeMensagem(mensagem string) error {
 	}
 	return errors.New(mensagem)
 }
+
+// PreRegistrarEvento cria a série com valor 0 antes do primeiro evento. Sem isso,
+// increase()/rate() do Prometheus ignoram a primeira ocorrência depois de cada deploy,
+// e é justamente o evento raro (falha, rejeição) que os alertas precisam enxergar.
+func PreRegistrarEvento(fluxo, evento string, resultados ...string) {
+	for _, r := range resultados {
+		eventosNegocio.Add(context.Background(), 0, metric.WithAttributes(
+			attribute.String("fluxo", fluxo),
+			attribute.String("evento", evento),
+			attribute.String("resultado", r),
+		))
+	}
+}

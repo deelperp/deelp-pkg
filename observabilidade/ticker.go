@@ -26,9 +26,10 @@ func RodadaTicker(ctx context.Context, job string, intervalo time.Duration, fn f
 		resultado = "erro"
 	}
 	FinalizarSpanErr(span, err)
-	jobAttr := metric.WithAttributes(attribute.String("job", job))
+	jobAttr := metric.WithAttributes(attribute.String("rotina", job))
+	falhasTicker.Add(ctx, 0, jobAttr)
 	duracaoTicker.Record(ctx, time.Since(inicio).Seconds(), metric.WithAttributes(
-		attribute.String("job", job), attribute.String("resultado", resultado)))
+		attribute.String("rotina", job), attribute.String("resultado", resultado)))
 	ultimaExecucao.Record(ctx, float64(time.Now().Unix()), jobAttr)
 	intervaloTicker.Record(ctx, intervalo.Seconds(), jobAttr)
 	if err != nil {
