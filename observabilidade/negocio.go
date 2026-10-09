@@ -3,6 +3,7 @@ package observabilidade
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -17,18 +18,24 @@ var (
 // MedirEtapa abre um span "fluxo.etapa" e mede a duração. Rótulos (fluxo, etapa) são
 // valores fixos do código; nunca passar id, chave ou nome de tenant.
 func MedirEtapa(ctx context.Context, fluxo, etapa string, fn func(context.Context) error) error {
-	ctx, span := Span(ctx, fluxo, etapa)
+	ctx, span := Span(ctx, fluxo, fluxo+"."+etapa)
 	inicio := time.Now()
-	err := fn(ctx)
-	resultado := "ok"
-	if err != nil {
-		resultado = "erro"
+	registrar := func(resultado string) {
+		duracaoEtapa.Record(ctx, time.Since(inicio).Seconds(), metric.WithAttributes(
+			attribute.String("fluxo", fluxo),
+			attribute.String("etapa", etapa),
+			attribute.String("resultado", resultado),
+		))
 	}
-	duracaoEtapa.Record(ctx, time.Since(inicio).Seconds(), metric.WithAttributes(
-		attribute.String("fluxo", fluxo),
-		attribute.String("etapa", etapa),
-		attribute.String("resultado", resultado),
-	))
+	defer func() {
+		if p := recover(); p != nil {
+			registrar("erro")
+			FinalizarSpanErr(span, fmt.Errorf("panic: %v", p))
+			panic(p)
+		}
+	}()
+	err := fn(ctx)
+	registrar(ResultadoDe(err))
 	FinalizarSpanErr(span, err)
 	return err
 }
@@ -44,6 +51,19 @@ func ContarEvento(ctx context.Context, fluxo, evento, resultado string, extras .
 	eventosNegocio.Add(ctx, 1, metric.WithAttributes(attrs...))
 }
 
+// ContarEventoN soma n ocorrências de uma vez (ex.: notas revertidas numa rodada).
+func ContarEventoN(ctx context.Context, fluxo, evento, resultado string, n int64, extras ...attribute.KeyValue) {
+	if n <= 0 {
+		return
+	}
+	attrs := append([]attribute.KeyValue{
+		attribute.String("fluxo", fluxo),
+		attribute.String("evento", evento),
+		attribute.String("resultado", resultado),
+	}, extras...)
+	eventosNegocio.Add(ctx, n, metric.WithAttributes(attrs...))
+}
+
 func ResultadoDe(err error) string {
 	if err != nil {
 		return "erro"
@@ -56,7 +76,10 @@ const limiteMensagemSpan = 200
 // ErroDeMensagem transforma a mensagem de um resultado de negócio em erro para o
 // status do span, truncada para não levar texto longo (ou dado do usuário) ao Jaeger.
 func ErroDeMensagem(mensagem string) error {
-	mensagem = redigirTexto(mensagem)
+	return erroTruncado(redigirTexto(mensagem))
+}
+
+func erroTruncado(mensagem string) error {
 	if r := []rune(mensagem); len(r) > limiteMensagemSpan {
 		mensagem = string(r[:limiteMensagemSpan]) + "…"
 	}

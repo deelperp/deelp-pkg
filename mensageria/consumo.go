@@ -2,6 +2,7 @@ package mensageria
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"github.com/deelperp/deelp-pkg/observabilidade"
@@ -57,7 +58,7 @@ func ProcessarMensagem(ctx context.Context, fila string, headers amqp091.Table, 
 		trace.WithAttributes(
 			attribute.String("messaging.system", "rabbitmq"),
 			attribute.String("messaging.destination.name", fila),
-			attribute.String("messaging.message.id", messageId),
+			attribute.String("messaging.message.id", observabilidade.RedigirTexto(messageId)),
 			attribute.Int("messaging.deelp.tentativa", tentativaDe(headers)+1),
 		))
 	attrs := metric.WithAttributes(attribute.String("fila", fila))
@@ -65,13 +66,20 @@ func ProcessarMensagem(ctx context.Context, fila string, headers amqp091.Table, 
 		latenciaFila.Record(ctx, time.Since(ts).Seconds(), attrs)
 	}
 	inicio := time.Now()
-	err := handler(ctx)
-	resultado := "ok"
-	if err != nil {
-		resultado = "erro"
+	registrar := func(err error) {
+		duracaoConsumo.Record(ctx, time.Since(inicio).Seconds(), metric.WithAttributes(
+			attribute.String("fila", fila), attribute.String("resultado", observabilidade.ResultadoDe(err))))
 	}
-	duracaoConsumo.Record(ctx, time.Since(inicio).Seconds(), metric.WithAttributes(
-		attribute.String("fila", fila), attribute.String("resultado", resultado)))
+	defer func() {
+		if p := recover(); p != nil {
+			erro := fmt.Errorf("panic: %v", p)
+			registrar(erro)
+			observabilidade.FinalizarSpanErr(span, erro)
+			panic(p)
+		}
+	}()
+	err := handler(ctx)
+	registrar(err)
 	observabilidade.FinalizarSpanErr(span, err)
 	return err
 }
@@ -94,4 +102,12 @@ func tentativaDe(h amqp091.Table) int {
 		return v
 	}
 	return 0
+}
+
+// CabecalhosDoContexto devolve os headers AMQP com o traceparent do contexto, para o
+// consumidor continuar o trace do produtor.
+func CabecalhosDoContexto(ctx context.Context) amqp091.Table {
+	headers := amqp091.Table{}
+	otel.GetTextMapPropagator().Inject(ctx, CarrierAMQP(headers))
+	return headers
 }

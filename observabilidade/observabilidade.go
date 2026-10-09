@@ -20,8 +20,11 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"go.opentelemetry.io/otel/attribute"
 	"log/slog"
+	"os"
 	"strings"
+	"time"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
@@ -139,11 +142,15 @@ func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 	// usando o semconv pinado em /v1.27.0. Atributos auxiliares (host.name,
 	// process.pid, etc) são úteis mas não essenciais — perdê-los é aceitável
 	// e evita 100% o erro de schema URL conflict.
-	res := resource.NewWithAttributes(semconv.SchemaURL,
+	atributosRecurso := []attribute.KeyValue{
 		semconv.ServiceNameKey.String(cfg.NomeServico),
 		semconv.ServiceVersionKey.String(versao),
 		semconv.DeploymentEnvironmentNameKey.String(ambiente),
-	)
+	}
+	if instancia := os.Getenv("HOSTNAME"); instancia != "" {
+		atributosRecurso = append(atributosRecurso, semconv.ServiceInstanceIDKey.String(instancia))
+	}
+	res := resource.NewWithAttributes(semconv.SchemaURL, atributosRecurso...)
 
 	proto := cfg.protocoloEfetivo()
 	cfg.log("observabilidade.Iniciar", "servico", cfg.NomeServico, "protocolo", string(proto), "endpoint", cfg.Endpoint)
@@ -180,13 +187,13 @@ func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 			return nil, fmt.Errorf("observabilidade: criar metric exporter HTTP: %w", merr)
 		}
 		tp = sdktrace.NewTracerProvider(
-			sdktrace.WithBatcher(traceExporter),
+			sdktrace.WithBatcher(RedigirExportador(traceExporter)),
 			sdktrace.WithSpanProcessor(processadorTenant{}),
 			sdktrace.WithSampler(amostrador(cfg.Amostragem)),
 			sdktrace.WithResource(res),
 		)
 		mt = sdkmetric.NewMeterProvider(
-			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
+			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter, opcoesLeitor()...)),
 			sdkmetric.WithView(visoesPadrao()...),
 			sdkmetric.WithResource(res),
 		)
@@ -212,13 +219,13 @@ func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 			return nil, fmt.Errorf("observabilidade: criar metric exporter gRPC: %w", merr)
 		}
 		tp = sdktrace.NewTracerProvider(
-			sdktrace.WithBatcher(traceExporter),
+			sdktrace.WithBatcher(RedigirExportador(traceExporter)),
 			sdktrace.WithSpanProcessor(processadorTenant{}),
 			sdktrace.WithSampler(amostrador(cfg.Amostragem)),
 			sdktrace.WithResource(res),
 		)
 		mt = sdkmetric.NewMeterProvider(
-			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
+			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter, opcoesLeitor()...)),
 			sdkmetric.WithView(visoesPadrao()...),
 			sdkmetric.WithResource(res),
 		)
@@ -234,7 +241,6 @@ func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 	// os consumidores deste pacote.
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{},
-		propagation.Baggage{},
 	))
 
 	return func(c context.Context) error {
@@ -242,4 +248,15 @@ func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 		errMT := mt.Shutdown(c)
 		return errors.Join(errTP, errMT)
 	}, nil
+}
+
+const intervaloExportacaoPadrao = 15 * time.Second
+
+// opcoesLeitor alinha a exportação ao scrape de 15s do Prometheus; OTEL_METRIC_EXPORT_INTERVAL,
+// quando definida, tem precedência. Com os 60s padrão do SDK, rate() sobre janela curta oscila.
+func opcoesLeitor() []sdkmetric.PeriodicReaderOption {
+	if os.Getenv("OTEL_METRIC_EXPORT_INTERVAL") != "" {
+		return nil
+	}
+	return []sdkmetric.PeriodicReaderOption{sdkmetric.WithInterval(intervaloExportacaoPadrao)}
 }

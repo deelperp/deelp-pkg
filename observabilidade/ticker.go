@@ -2,6 +2,7 @@ package observabilidade
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -20,21 +21,28 @@ var (
 func RodadaTicker(ctx context.Context, job string, intervalo time.Duration, fn func(context.Context) error) error {
 	ctx, span := Span(ctx, "ticker", job)
 	inicio := time.Now()
-	err := fn(ctx)
-	resultado := "ok"
-	if err != nil {
-		resultado = "erro"
-	}
-	FinalizarSpanErr(span, err)
 	jobAttr := metric.WithAttributes(attribute.String("rotina", job))
 	falhasTicker.Add(ctx, 0, jobAttr)
-	duracaoTicker.Record(ctx, time.Since(inicio).Seconds(), metric.WithAttributes(
-		attribute.String("rotina", job), attribute.String("resultado", resultado)))
-	ultimaExecucao.Record(ctx, float64(time.Now().Unix()), jobAttr)
-	intervaloTicker.Record(ctx, intervalo.Seconds(), jobAttr)
-	if err != nil {
-		falhasTicker.Add(ctx, 1, jobAttr)
+	registrar := func(err error) {
+		duracaoTicker.Record(ctx, time.Since(inicio).Seconds(), metric.WithAttributes(
+			attribute.String("rotina", job), attribute.String("resultado", ResultadoDe(err))))
+		ultimaExecucao.Record(ctx, float64(time.Now().Unix()), jobAttr)
+		intervaloTicker.Record(ctx, intervalo.Seconds(), jobAttr)
+		if err != nil {
+			falhasTicker.Add(ctx, 1, jobAttr)
+		}
 	}
+	defer func() {
+		if p := recover(); p != nil {
+			erro := fmt.Errorf("panic: %v", p)
+			registrar(erro)
+			FinalizarSpanErr(span, erro)
+			panic(p)
+		}
+	}()
+	err := fn(ctx)
+	registrar(err)
+	FinalizarSpanErr(span, err)
 	return err
 }
 

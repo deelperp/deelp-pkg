@@ -39,7 +39,7 @@ func Rotas(mux *http.ServeMux) http.Handler {
 		mux.ServeHTTP(w, r)
 		if ref, ok := r.Context().Value(chaveRota{}).(*referenciaRota); ok && r.Pattern != "" {
 			p := r.Pattern
-			ref.valor.Store(&p)
+			ref.valor.CompareAndSwap(nil, &p)
 		}
 	})
 }
@@ -71,11 +71,24 @@ func ignorarRequisicao(r *http.Request) bool {
 	case "/health", "/healthz", "/ready", "/readyz", "/metrics":
 		return true
 	}
-	return strings.HasSuffix(r.URL.Path, "/health") || strings.HasSuffix(r.URL.Path, "/healthz")
+	return strings.Count(r.URL.Path, "/") <= 2 && (strings.HasSuffix(r.URL.Path, "/health") || strings.HasSuffix(r.URL.Path, "/healthz"))
+}
+
+func requisicaoPublica(r *http.Request) bool {
+	return r.Header.Get("Authorization") == "" && r.Header.Get("X-Internal-Key") == ""
 }
 
 func ehUpgrade(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
+}
+
+func metodoConhecido(m string) string {
+	switch m {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch,
+		http.MethodDelete, http.MethodOptions, http.MethodConnect, http.MethodTrace:
+		return m
+	}
+	return "_OTHER"
 }
 
 func classeStatus(codigo int) string {
@@ -99,35 +112,68 @@ func MiddlewareHTTP(servico string) func(http.Handler) http.Handler {
 			emAndamento.Add(ctx, 1, servicoAttr)
 			defer emAndamento.Add(ctx, -1, servicoAttr)
 
-			m := httpsnoop.CaptureMetrics(next, w, r)
+			inicio := time.Now()
+			codigo := http.StatusInternalServerError
+			defer func() {
+				p := recover()
+				if p == nil {
+					return
+				}
+				if p == http.ErrAbortHandler {
+					codigo = 499
+				}
+				finalizarRequisicao(ctx, r, servico, codigo, time.Since(inicio))
+				panic(p)
+			}()
 
-			rota := rotaDe(ctx, r)
-			span := trace.SpanFromContext(ctx)
-			span.SetName(nomeSpanDaRota(r.Method, rota))
-			span.SetAttributes(attribute.String("http.route", rota))
-			if m.Code >= 500 {
-				span.SetStatus(codes.Error, "HTTP "+strconv.Itoa(m.Code))
-			}
-			if ehUpgrade(r) {
-				return
-			}
-			duracaoServidor.Record(ctx, m.Duration.Seconds(), metric.WithAttributes(
-				attribute.String("servico", servico),
-				attribute.String("rota", rota),
-				attribute.String("metodo", r.Method),
-				attribute.String("status_classe", classeStatus(m.Code)),
-			))
+			m := httpsnoop.CaptureMetrics(next, w, r)
+			codigo = m.Code
+			finalizarRequisicao(ctx, r, servico, codigo, m.Duration)
 		})
 		return otelhttp.NewHandler(interno, servico,
 			otelhttp.WithMeterProvider(metricnoop.NewMeterProvider()),
 			otelhttp.WithFilter(func(r *http.Request) bool { return !ignorarRequisicao(r) }),
+			otelhttp.WithPublicEndpointFn(requisicaoPublica),
 			otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string { return r.Method }),
 		)
 	}
 }
 
+func finalizarRequisicao(ctx context.Context, r *http.Request, servico string, codigo int, duracao time.Duration) {
+	rota := rotaDe(ctx, r)
+	if rota == rotaNaoRoteada {
+		switch {
+		case r.Method == http.MethodOptions:
+			rota = "preflight_cors"
+		case codigo == 401 || codigo == 402 || codigo == 403 || codigo == 429:
+			rota = "recusada_antes_da_rota"
+		}
+	}
+	span := trace.SpanFromContext(ctx)
+	span.SetName(nomeSpanDaRota(r.Method, rota))
+	span.SetAttributes(attribute.String("http.route", rota))
+	if codigo >= 500 {
+		span.SetStatus(codes.Error, "HTTP "+strconv.Itoa(codigo))
+	}
+	if ehUpgrade(r) {
+		return
+	}
+	duracaoServidor.Record(ctx, duracao.Seconds(), metric.WithAttributes(
+		attribute.String("servico", servico),
+		attribute.String("rota", rota),
+		attribute.String("metodo", metodoConhecido(r.Method)),
+		attribute.String("status_classe", classeStatus(codigo)),
+	))
+}
+
 type transporteMedido struct {
 	base http.RoundTripper
+}
+
+func (t transporteMedido) CloseIdleConnections() {
+	if c, ok := t.base.(interface{ CloseIdleConnections() }); ok {
+		c.CloseIdleConnections()
+	}
 }
 
 func (t transporteMedido) RoundTrip(r *http.Request) (*http.Response, error) {

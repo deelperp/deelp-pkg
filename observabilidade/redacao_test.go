@@ -54,7 +54,7 @@ func TestRedigirTexto(t *testing.T) {
 		`duplicate key value violates unique constraint "uq_cnpj" Key (cnpj)=(12.345.678/0001-90) already exists`: `duplicate key value violates unique constraint "uq_cnpj" Key (cnpj)=([numero]) already exists`,
 		`falha ao enviar para maria.silva@empresa.com.br`:                                                         `falha ao enviar para [email]`,
 		`chave 35261012345678000190550010000001231000001234 rejeitada`:                                            `chave [numero] rejeitada`,
-		`Authorization: Bearer abc.def.ghi falhou`:                                                                `Authorization: bearer [token] falhou`,
+		`Authorization: Bearer abc.def.ghi falhou`:                                                                `Authorization: [redigido] falhou`,
 		`token Zk3j9Qw2LmN8pR4tVx7yB1cD5eFgH inválido`:                                                            `token [token] inválido`,
 		`conexão recusada: dial tcp 10.0.0.5:5432`:                                                                `conexão recusada: dial tcp 10.0.0.5:5432`,
 	}

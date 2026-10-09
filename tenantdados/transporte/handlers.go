@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/deelperp/deelp-pkg/internalauth"
+	"github.com/deelperp/deelp-pkg/observabilidade"
 	"github.com/deelperp/deelp-pkg/tenantdados/core"
 	"github.com/google/uuid"
 )
@@ -80,16 +82,24 @@ func HandlerExpurgo(s core.Servico, v *internalauth.Verificador) http.HandlerFun
 // Envolver atende as duas rotas internas antes do roteador do serviço, que
 // costuma exigir JWT em tudo que não reconhece como público.
 func Envolver(s core.Servico, prefixo string, v *internalauth.Verificador, proximo http.Handler) http.Handler {
-	exportacao := HandlerExportacao(s, v)
-	expurgo := HandlerExpurgo(s, v)
+	interno := http.NewServeMux()
+	interno.HandleFunc("GET "+prefixo+CaminhoExportacao, HandlerExportacao(s, v))
+	interno.HandleFunc("POST "+prefixo+CaminhoExpurgo, HandlerExpurgo(s, v))
+	instrumentado := observabilidade.MiddlewareHTTP(nomeDoServico(prefixo))(observabilidade.Rotas(interno))
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case r.Method == http.MethodGet && r.URL.Path == prefixo+CaminhoExportacao:
-			exportacao(w, r)
-		case r.Method == http.MethodPost && r.URL.Path == prefixo+CaminhoExpurgo:
-			expurgo(w, r)
+		case r.Method == http.MethodGet && r.URL.Path == prefixo+CaminhoExportacao,
+			r.Method == http.MethodPost && r.URL.Path == prefixo+CaminhoExpurgo:
+			instrumentado.ServeHTTP(w, r)
 		default:
 			proximo.ServeHTTP(w, r)
 		}
 	})
+}
+
+func nomeDoServico(prefixo string) string {
+	if nome, _, _ := strings.Cut(strings.Trim(prefixo, "/"), "/"); nome != "" {
+		return nome
+	}
+	return "servico"
 }

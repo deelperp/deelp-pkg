@@ -107,7 +107,7 @@ func TestMedirEtapaPropagaErroEMarcaSpan(t *testing.T) {
 		t.Fatalf("erro deve voltar intacto, veio %v", err)
 	}
 	spans := gravador.Ended()
-	if len(spans) != 1 || spans[0].Name() != "enviar_sefaz" || spans[0].Status().Code.String() != "Error" {
+	if len(spans) != 1 || spans[0].Name() != "nfe_emissao.enviar_sefaz" || spans[0].Status().Code.String() != "Error" {
 		t.Fatalf("span inesperado: %+v", spans)
 	}
 }
