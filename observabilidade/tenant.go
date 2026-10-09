@@ -31,6 +31,7 @@ func AtributosTenant(ctx context.Context) []attribute.KeyValue {
 type processadorTenant struct{}
 
 func (processadorTenant) OnStart(ctx context.Context, s sdktrace.ReadWriteSpan) {
+	redigirAtributosDeURL(s)
 	if attrs := AtributosTenant(ctx); len(attrs) > 0 {
 		s.SetAttributes(attrs...)
 	}
