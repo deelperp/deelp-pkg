@@ -60,6 +60,9 @@ type Config struct {
 	Endpoint      string
 	Protocolo     Protocolo
 	Logger        *slog.Logger
+	// Amostragem é a fração de traces raiz mantidos (0 < x < 1). Zero lê
+	// DEELP_TRACE_SAMPLE_RATIO; sem ele, mantém tudo.
+	Amostragem float64
 	// TLSConfig habilita TLS e permite configurar a CA e certificados de cliente.
 	// HTTPS usa TLS mesmo quando este campo é nil; host:porta mantém o modo sem TLS.
 	TLSConfig *tls.Config
@@ -178,10 +181,13 @@ func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 		}
 		tp = sdktrace.NewTracerProvider(
 			sdktrace.WithBatcher(traceExporter),
+			sdktrace.WithSpanProcessor(processadorTenant{}),
+			sdktrace.WithSampler(amostrador(cfg.Amostragem)),
 			sdktrace.WithResource(res),
 		)
 		mt = sdkmetric.NewMeterProvider(
 			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
+			sdkmetric.WithView(visoesPadrao()...),
 			sdkmetric.WithResource(res),
 		)
 
@@ -207,10 +213,13 @@ func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 		}
 		tp = sdktrace.NewTracerProvider(
 			sdktrace.WithBatcher(traceExporter),
+			sdktrace.WithSpanProcessor(processadorTenant{}),
+			sdktrace.WithSampler(amostrador(cfg.Amostragem)),
 			sdktrace.WithResource(res),
 		)
 		mt = sdkmetric.NewMeterProvider(
 			sdkmetric.WithReader(sdkmetric.NewPeriodicReader(metricExporter)),
+			sdkmetric.WithView(visoesPadrao()...),
 			sdkmetric.WithResource(res),
 		)
 

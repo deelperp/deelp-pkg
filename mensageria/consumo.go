@@ -1,0 +1,91 @@
+package mensageria
+
+import (
+	"context"
+	"time"
+
+	"github.com/deelperp/deelp-pkg/observabilidade"
+	"github.com/rabbitmq/amqp091-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
+)
+
+const headerTentativasConsumo = "x-tentativas"
+
+var (
+	duracaoConsumo = observabilidade.HistogramaSegundos("deelp_mq_consumo_duracao_seconds", "Duração do processamento de mensagem por fila")
+	latenciaFila   = observabilidade.HistogramaSegundos("deelp_mq_entrega_latencia_seconds", "Tempo entre publicar e começar a processar")
+	enviadasDLQ    = observabilidade.Contador("deelp_mq_dlq_total", "Mensagens enviadas à DLQ por fila")
+	reenfileiradas = observabilidade.Contador("deelp_mq_retry_total", "Mensagens reenfileiradas para nova tentativa por fila")
+)
+
+// CarrierAMQP adapta os headers da entrega para o propagador do OTel.
+type CarrierAMQP amqp091.Table
+
+func (c CarrierAMQP) Get(chave string) string {
+	if s, ok := c[chave].(string); ok {
+		return s
+	}
+	return ""
+}
+
+func (c CarrierAMQP) Set(chave, valor string) { c[chave] = valor }
+
+func (c CarrierAMQP) Keys() []string {
+	chaves := make([]string, 0, len(c))
+	for k := range c {
+		chaves = append(chaves, k)
+	}
+	return chaves
+}
+
+// ProcessarEntrega extrai o contexto do produtor, abre o span de consumo e mede o
+// processamento. O desfecho (ack/retry/DLQ) continua com o chamador, que o informa
+// em RegistrarRetry/RegistrarDLQ.
+func ProcessarEntrega(ctx context.Context, fila string, d amqp091.Delivery, handler func(context.Context) error) error {
+	ctx = otel.GetTextMapPropagator().Extract(ctx, CarrierAMQP(d.Headers))
+	ctx, span := otel.Tracer("github.com/deelperp/deelp-pkg/mensageria").Start(ctx, "consumir "+fila,
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "rabbitmq"),
+			attribute.String("messaging.destination.name", fila),
+			attribute.String("messaging.message.id", d.MessageId),
+			attribute.Int("messaging.deelp.tentativa", tentativaDe(d.Headers)+1),
+		))
+	attrs := metric.WithAttributes(attribute.String("fila", fila))
+	if !d.Timestamp.IsZero() {
+		latenciaFila.Record(ctx, time.Since(d.Timestamp).Seconds(), attrs)
+	}
+	inicio := time.Now()
+	err := handler(ctx)
+	resultado := "ok"
+	if err != nil {
+		resultado = "erro"
+	}
+	duracaoConsumo.Record(ctx, time.Since(inicio).Seconds(), metric.WithAttributes(
+		attribute.String("fila", fila), attribute.String("resultado", resultado)))
+	observabilidade.FinalizarSpanErr(span, err)
+	return err
+}
+
+func RegistrarRetry(ctx context.Context, fila string) {
+	reenfileiradas.Add(ctx, 1, metric.WithAttributes(attribute.String("fila", fila)))
+}
+
+func RegistrarDLQ(ctx context.Context, fila string) {
+	enviadasDLQ.Add(ctx, 1, metric.WithAttributes(attribute.String("fila", fila)))
+}
+
+func tentativaDe(h amqp091.Table) int {
+	switch v := h[headerTentativasConsumo].(type) {
+	case int32:
+		return int(v)
+	case int64:
+		return int(v)
+	case int:
+		return v
+	}
+	return 0
+}

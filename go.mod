@@ -1,6 +1,6 @@
 module github.com/deelperp/deelp-pkg
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/alicebob/miniredis/v2 v2.35.0
@@ -9,6 +9,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.47
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.71.0
 	github.com/beevik/etree v1.6.0
+	github.com/felixge/httpsnoop v1.0.4
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.11.1
@@ -16,14 +17,15 @@ require (
 	github.com/redis/go-redis/v9 v9.18.0
 	github.com/russellhaering/goxmldsig v1.6.0
 	go.mongodb.org/mongo-driver v1.17.6
+	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.64.0
 	go.opentelemetry.io/otel v1.39.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc v1.27.0
 	go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp v1.27.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.27.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.27.0
 	go.opentelemetry.io/otel/metric v1.39.0
-	go.opentelemetry.io/otel/sdk v1.27.0
-	go.opentelemetry.io/otel/sdk/metric v1.27.0
+	go.opentelemetry.io/otel/sdk v1.39.0
+	go.opentelemetry.io/otel/sdk/metric v1.39.0
 	go.opentelemetry.io/otel/trace v1.39.0
 	go.opentelemetry.io/proto/otlp v1.2.0
 	google.golang.org/grpc v1.64.0
@@ -67,7 +69,7 @@ require (
 	golang.org/x/crypto v0.26.0 // indirect
 	golang.org/x/net v0.25.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
-	golang.org/x/sys v0.23.0 // indirect
+	golang.org/x/sys v0.39.0 // indirect
 	golang.org/x/text v0.17.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20240520151616-dc85e6b867a5 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20240515191416-fc5f0ca64291 // indirect
