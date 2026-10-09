@@ -14,7 +14,11 @@ import (
 
 var (
 	segmentoUUID     = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
-	segmentoNumerico = regexp.MustCompile(`^[0-9]{14,}$`)
+	segmentoNumerico = regexp.MustCompile(`^[0-9]{11,}$`)
+	textoEmail       = regexp.MustCompile(`[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}`)
+	textoJWT         = regexp.MustCompile(`eyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]*`)
+	textoBearer      = regexp.MustCompile(`(?i)bearer\s+\S+`)
+	textoNumero      = regexp.MustCompile(`\d[\d.\-/ ]{9,}\d`)
 	atributosDeURL   = map[attribute.Key]bool{"url.path": true, "http.target": true, "url.full": true, "http.url": true}
 )
 
@@ -80,4 +84,23 @@ func redigirAtributosDeURL(s sdktrace.ReadWriteSpan) {
 			s.SetAttributes(attribute.String(string(kv.Key), limpo))
 		}
 	}
+}
+
+// redigirTexto remove de mensagens de erro o que identifica pessoa ou dá acesso:
+// e-mail, JWT, bearer, CPF/CNPJ/telefone/chave (sequências longas de dígitos) e tokens.
+// Erro de banco costuma carregar o valor da linha (violação de unicidade, por exemplo).
+func redigirTexto(msg string) string {
+	msg = textoJWT.ReplaceAllString(msg, "[jwt]")
+	msg = textoBearer.ReplaceAllString(msg, "bearer [token]")
+	msg = textoEmail.ReplaceAllString(msg, "[email]")
+	msg = textoNumero.ReplaceAllString(msg, "[numero]")
+	palavras := strings.FieldsFunc(msg, func(r rune) bool {
+		return !(unicode.IsLetter(r) || unicode.IsDigit(r) || r == '-' || r == '_' || r == '=')
+	})
+	for _, p := range palavras {
+		if len(p) >= 24 && segmentoSensivel(p) {
+			msg = strings.ReplaceAll(msg, p, "[token]")
+		}
+	}
+	return msg
 }

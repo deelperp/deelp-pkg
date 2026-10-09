@@ -56,6 +56,7 @@ const limiteMensagemSpan = 200
 // ErroDeMensagem transforma a mensagem de um resultado de negócio em erro para o
 // status do span, truncada para não levar texto longo (ou dado do usuário) ao Jaeger.
 func ErroDeMensagem(mensagem string) error {
+	mensagem = redigirTexto(mensagem)
 	if r := []rune(mensagem); len(r) > limiteMensagemSpan {
 		mensagem = string(r[:limiteMensagemSpan]) + "…"
 	}

@@ -15,6 +15,7 @@ import (
 	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/metric"
 	metricnoop "go.opentelemetry.io/otel/metric/noop"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
 
@@ -159,6 +160,21 @@ func Transporte(base http.RoundTripper) http.RoundTripper {
 	}
 	return transporteMedido{base: otelhttp.NewTransport(base,
 		otelhttp.WithMeterProvider(metricnoop.NewMeterProvider()),
+		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
+			return "HTTP " + r.Method + " " + destinoDe(r.URL)
+		}),
+	)}
+}
+
+// TransporteExterno mantém span e métrica, mas não injeta traceparent nem baggage:
+// serviço de terceiro (SEFAZ, PSP, consulta de CNPJ, IA) não recebe identificador interno.
+func TransporteExterno(base http.RoundTripper) http.RoundTripper {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return transporteMedido{base: otelhttp.NewTransport(base,
+		otelhttp.WithMeterProvider(metricnoop.NewMeterProvider()),
+		otelhttp.WithPropagators(propagation.NewCompositeTextMapPropagator()),
 		otelhttp.WithSpanNameFormatter(func(_ string, r *http.Request) string {
 			return "HTTP " + r.Method + " " + destinoDe(r.URL)
 		}),

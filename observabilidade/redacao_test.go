@@ -48,3 +48,37 @@ func TestSpanDoServidorNaoGuardaTokenDoPath(t *testing.T) {
 		}
 	}
 }
+
+func TestRedigirTexto(t *testing.T) {
+	casos := map[string]string{
+		`duplicate key value violates unique constraint "uq_cnpj" Key (cnpj)=(12.345.678/0001-90) already exists`: `duplicate key value violates unique constraint "uq_cnpj" Key (cnpj)=([numero]) already exists`,
+		`falha ao enviar para maria.silva@empresa.com.br`:                                                         `falha ao enviar para [email]`,
+		`chave 35261012345678000190550010000001231000001234 rejeitada`:                                            `chave [numero] rejeitada`,
+		`Authorization: Bearer abc.def.ghi falhou`:                                                                `Authorization: bearer [token] falhou`,
+		`token Zk3j9Qw2LmN8pR4tVx7yB1cD5eFgH inválido`:                                                            `token [token] inválido`,
+		`conexão recusada: dial tcp 10.0.0.5:5432`:                                                                `conexão recusada: dial tcp 10.0.0.5:5432`,
+	}
+	for entrada, esperado := range casos {
+		if got := redigirTexto(entrada); got != esperado {
+			t.Errorf("\n entrada  %s\n esperado %s\n veio     %s", entrada, esperado, got)
+		}
+	}
+}
+
+func TestTransporteExternoNaoInjetaTraceparent(t *testing.T) {
+	prepararTracer(t)
+	var recebido string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { recebido = r.Header.Get("traceparent") }))
+	defer srv.Close()
+	ctx, span := Span(t.Context(), "teste", "pai")
+	defer span.End()
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, srv.URL, nil)
+	resp, err := (&http.Client{Transport: TransporteExterno(nil)}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if recebido != "" {
+		t.Fatalf("traceparent não pode sair para terceiro: %q", recebido)
+	}
+}
