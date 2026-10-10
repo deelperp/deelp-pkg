@@ -1,4 +1,5 @@
 [
+  "assistente-service",
   "autenticacao-service",
   "cliente-service",
   "email-service",

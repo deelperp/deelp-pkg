@@ -101,6 +101,9 @@ func ValidarToken(tokenString, secret string) (Claims, error) {
 	if c.UsuarioId == "" {
 		return c, ErrTokenInvalido
 	}
+	if c.Canal != "" {
+		return Claims{}, ErrTokenDeCanal
+	}
 	return c, nil
 }
 
@@ -108,6 +111,7 @@ var (
 	ErrTokenAusente  = errors.New("auth: token ausente")
 	ErrSecretAusente = errors.New("auth: secret ausente")
 	ErrTokenInvalido = errors.New("auth: token inválido ou expirado")
+	ErrTokenDeCanal  = errors.New("auth: token de canal não é aceito nesta rota")
 )
 
 func extrairClaims(token *jwt.Token) Claims {
@@ -121,6 +125,7 @@ func extrairClaims(token *jwt.Token) Claims {
 	}
 	admin, _ := (*mc)["isPlatformAdmin"].(bool)
 	escritaAte, _ := (*mc)["suporteEscritaAte"].(float64)
+	expiraEm, _ := (*mc)["exp"].(float64)
 	modulosPlataforma := listaDeTexto((*mc)["plataformaModulos"])
 	return Claims{
 		IsPlatformAdmin:   admin,
@@ -136,6 +141,8 @@ func extrairClaims(token *jwt.Token) Claims {
 		SessaoSuporteId:   get("sessaoSuporteId"),
 		SuporteEscritaAte: int64(escritaAte),
 		PlataformaModulos: modulosPlataforma,
+		Canal:             get("canal"),
+		ExpiraEm:          int64(expiraEm),
 	}
 }
 
@@ -212,6 +219,12 @@ func Autenticacao(cfg Config) func(http.Handler) http.Handler {
 				// módulo é conferido depois, no RBAC, contra a sessão no banco.
 				if !EhRequisicaoDeLeitura(r) && !SuportePodeEscrever(claims, time.Now()) {
 					resp(w, http.StatusForbidden, "Sessão de suporte é somente leitura")
+					return
+				}
+			}
+			if claims.Canal != "" {
+				if recusa := RecusaDoCanal(claims, r); recusa != "" {
+					resp(w, http.StatusForbidden, recusa)
 					return
 				}
 			}

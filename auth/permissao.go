@@ -43,6 +43,10 @@ func RequerPermissao(cfg Config, checker PermissaoChecker, modulo, acao string) 
 				resp(w, http.StatusForbidden, "Token sem vínculo de empresa. Selecione uma colaboração novamente.")
 				return
 			}
+			if !CanalPermiteAcao(claims, acao) {
+				resp(w, http.StatusForbidden, "O assistente de IA tem acesso somente leitura")
+				return
+			}
 			if checker == nil {
 				cfg.log("auth.RequerPermissao: checker nil", "modulo", modulo, "acao", acao)
 				resp(w, http.StatusForbidden, "Autorização indisponível")
@@ -85,6 +89,10 @@ func RequerPermissaoRemota(cfg Config, checker PermissaoCheckerRemoto, modulo, a
 			}
 			if claims.EmpresaId == "" {
 				resp(w, http.StatusForbidden, "Token sem vínculo de empresa. Selecione uma colaboração novamente.")
+				return
+			}
+			if !CanalPermiteAcao(claims, acao) {
+				resp(w, http.StatusForbidden, "O assistente de IA tem acesso somente leitura")
 				return
 			}
 			if checker == nil {
@@ -138,6 +146,9 @@ func RequerQualquerPermissaoRemota(cfg Config, checker PermissaoCheckerRemoto, p
 			bearer := bearerDoRequest(r, cfg.CookieName)
 			var ultimoErro error
 			for _, par := range pares {
+				if !CanalPermiteAcao(claims, par.Acao) {
+					continue
+				}
 				permitido, err := checker.TemPermissao(r.Context(), bearer, claims.UsuarioId, par.Modulo, par.Acao)
 				if err != nil {
 					ultimoErro = err
