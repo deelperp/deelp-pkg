@@ -50,8 +50,8 @@ type Claims struct {
 	SessaoSuporteId string
 	// Unix do fim da elevação de escrita. Zero significa somente leitura.
 	SuporteEscritaAte int64
-	Canal    string
-	ExpiraEm int64
+	Canal             string
+	ExpiraEm          int64
 }
 
 // EhPlatformAdminDoContexto informa se o token é de um operador da plataforma.
