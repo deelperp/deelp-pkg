@@ -111,7 +111,16 @@ func (c Config) log(msg string, args ...any) {
 
 // Iniciar configura tracer/meter providers globais e propagators, e devolve
 // uma função de shutdown que flush-a tudo em buffer antes de fechar.
+//
+// Com o Collector fora do ar o serviço sobe sem exporter e sonda o endereço a
+// cada intervaloSondagem; quando ele responde, os providers são instalados e
+// tracers/meters obtidos antes pela API global passam a exportar (delegação do
+// pacote otel). OBSERVABILIDADE_HABILITADA=false desliga tudo, sem sondagem.
 func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
+	if !Habilitada() {
+		cfg.logger().Info("observabilidade desativada", "servico", cfg.NomeServico, "env", EnvHabilitada)
+		return desligarNada, nil
+	}
 	if err := cfg.validar(); err != nil {
 		return nil, err
 	}
@@ -119,6 +128,25 @@ func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	otel.SetErrorHandler(&errorHandlerLimitado{logger: cfg.logger()})
+	// Sem propagator W3C, requests entre serviços perdem o trace parent —
+	// cada microservice cria um trace novo. Setar aqui resolve para todos
+	// os consumidores deste pacote.
+	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+	))
+
+	endereco := cfg.enderecoSondagem(endpoint)
+	if coletorAcessivel(endereco) {
+		return instalarProviders(ctx, cfg, endpoint)
+	}
+	cfg.logger().Info("observabilidade em espera: collector inacessível, conectando quando ele subir",
+		"servico", cfg.NomeServico, "endpoint", cfg.Endpoint, "sondagem", intervaloSondagem.String())
+	return aguardarColetor(cfg, endpoint, endereco), nil
+}
+
+func instalarProviders(ctx context.Context, cfg Config, endpoint endpointConfig) (Desligar, error) {
 	tlsConfig := &tls.Config{}
 	if cfg.TLSConfig != nil {
 		tlsConfig = cfg.TLSConfig.Clone()
@@ -236,12 +264,6 @@ func Iniciar(ctx context.Context, cfg Config) (Desligar, error) {
 
 	otel.SetTracerProvider(tp)
 	otel.SetMeterProvider(mt)
-	// Sem propagator W3C, requests entre serviços perdem o trace parent —
-	// cada microservice cria um trace novo. Setar aqui resolve para todos
-	// os consumidores deste pacote.
-	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
-		propagation.TraceContext{},
-	))
 
 	return func(c context.Context) error {
 		errTP := tp.Shutdown(c)

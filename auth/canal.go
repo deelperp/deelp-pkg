@@ -35,12 +35,23 @@ func RecusaDoCanal(c Claims, r *http.Request) string {
 	return ""
 }
 
+var consultasPorPostDoCanal = map[string]bool{
+	"/autenticacao-service/v1/colaboracoes/pesquisar":    true,
+	"/cliente-service/v1/clientes/pesquisar":             true,
+	"/cliente-service/v1/fornecedores/pesquisar":         true,
+	"/estoque-service/v1/materiais/pesquisar":            true,
+	"/estoque-service/v1/ncms/pesquisar":                 true,
+	"/estoque-service/v1/produtos/pesquisar":             true,
+	"/financeiro-service/v1/orcamentos-compra/pesquisar": true,
+	"/ordem-service/v1/pedidos/grade/pesquisar":          true,
+}
+
 func canalPodeChamar(r *http.Request) bool {
 	switch r.Method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return true
 	case http.MethodPost:
-		return strings.HasSuffix(strings.TrimRight(r.URL.Path, "/"), "/pesquisar")
+		return consultasPorPostDoCanal[strings.TrimRight(r.URL.Path, "/")]
 	}
 	return false
 }

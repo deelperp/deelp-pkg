@@ -78,6 +78,9 @@ func TestCanalAssistente_EscritaRecusada(t *testing.T) {
 		{http.MethodPost, "/relatorio-service/v1/relatorios/vendas"},
 		{http.MethodPost, "/financeiro-service/v1/orcamentos/x/gerar-pdf-solicitacao"},
 		{http.MethodPost, "/nfe-service/v1/nfe/listar"},
+		{http.MethodPost, "/financeiro-service/v1/contas-pagar/pesquisar"},
+		{http.MethodPost, "/qualquer-service/v1/rota-nova/pesquisar"},
+		{http.MethodPost, "/cliente-service/v1/clientes/pesquisar/../x"},
 	}
 	h := Autenticacao(Config{SecretKey: secret})(handlerOK())
 	for _, c := range casos {
